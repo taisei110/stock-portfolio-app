@@ -1,0 +1,59 @@
+# 環境変数・機密情報（絶対にアップロードしない）
+.env
+.env.local
+.env.*.local
+
+# データベースファイル
+*.db
+*.sqlite
+*.sqlite3
+portfolio.db
+
+# Python仮想環境
+venv/
+.venv/
+env/
+ENV/
+
+# Pythonキャッシュ
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+.Python
+
+# IDE設定
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS生成ファイル
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Streamlit
+.streamlit/secrets.toml
+
+# ログファイル
+*.log
+logs/
+
+# テスト関連
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ビルド成果物
+build/
+dist/
+*.egg-info/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# その他
+*.bak
+*.tmp
