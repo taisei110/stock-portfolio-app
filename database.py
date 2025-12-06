@@ -21,8 +21,11 @@ ENV_PATH = Path(__file__).resolve().parent / ".env"
 # SQLiteのパス（フォールバック用）
 SQLITE_PATH = Path(__file__).parent / "portfolio.db"
 
-# カテゴリ選択肢
-CATEGORIES = ["成長株", "高配当株", "バリュー株", "その他"]
+# テクニカル状態（旧カテゴリ）
+CATEGORIES = ["上昇トレンド", "下降トレンド", "レンジ相場"]
+
+# エントリー戦略
+ENTRY_STRATEGIES = ["トレンド順張り", "トレンド逆張り", "レンジ内リバウンド", "ブレイクアウト", "その他"]
 
 # 口座種別
 ACCOUNT_TYPES = ["現物", "信用"]

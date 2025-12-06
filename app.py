@@ -20,7 +20,8 @@ from database import (
     get_realized_profit_loss,
     get_total_realized_profit_loss,
     CATEGORIES,
-    ACCOUNT_TYPES
+    ACCOUNT_TYPES,
+    ENTRY_STRATEGIES
 )
 from stock_api import (
     normalize_ticker,
@@ -256,11 +257,20 @@ with st.sidebar:
             index=0 if not existing else (0 if existing['transaction_type'] == 'buy' else 1)
         )
         
-        # カテゴリ選択
+        # テクニカル状態選択
         category = st.selectbox(
-            "カテゴリ",
+            "📊 テクニカル状態",
             options=CATEGORIES,
-            index=CATEGORIES.index(existing.get('category', 'その他')) if existing and existing.get('category') in CATEGORIES else CATEGORIES.index('その他')
+            index=CATEGORIES.index(existing.get('category', '上昇トレンド')) if existing and existing.get('category') in CATEGORIES else 0,
+            help="エントリー時の相場状況を選択"
+        )
+        
+        # エントリー戦略選択
+        entry_strategy = st.selectbox(
+            "🎯 エントリー戦略",
+            options=ENTRY_STRATEGIES,
+            index=0,
+            help="どのような戦略でエントリーしたかを選択"
         )
         
         # 口座種別選択
@@ -318,7 +328,7 @@ with st.sidebar:
         notes = st.text_area(
             "取引の根拠・メモ",
             value=existing['notes'] if existing and existing['notes'] else "",
-            placeholder="例: 決算発表前のエントリー、移動平均線ブレイクでエントリー、目標価格到達で利確など",
+            placeholder="例: 25日移動平均線ブレイクでエントリー、出来高増加を確認",
             height=80
         )
         
@@ -348,17 +358,21 @@ with st.sidebar:
                         pass
                 
                 if editing:
+                    # エントリー戦略をメモに含める
+                    final_notes = f"【戦略: {entry_strategy}】{notes}" if notes else f"【戦略: {entry_strategy}】"
                     update_transaction(
                         st.session_state.editing_id,
                         normalized_ticker, final_company_name, transaction_type,
-                        quantity, price, str(transaction_date), notes, category, time_str, account_type
+                        quantity, price, str(transaction_date), final_notes, category, time_str, account_type
                     )
                     st.success("✅ 更新しました")
                     st.session_state.editing_id = None
                 else:
+                    # エントリー戦略をメモに含める
+                    final_notes = f"【戦略: {entry_strategy}】{notes}" if notes else f"【戦略: {entry_strategy}】"
                     add_transaction(
                         normalized_ticker, final_company_name, transaction_type,
-                        quantity, price, str(transaction_date), notes, category, time_str, account_type
+                        quantity, price, str(transaction_date), final_notes, category, time_str, account_type
                     )
                     st.success(f"✅ {final_company_name or normalized_ticker} を登録しました")
                 st.session_state.price_cache = {}
