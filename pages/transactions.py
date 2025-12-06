@@ -12,7 +12,10 @@ from database import (
     update_transaction, 
     delete_transaction, 
     get_all_transactions,
-    get_transaction_by_id
+    get_transaction_by_id,
+    CATEGORIES,
+    ENTRY_STRATEGIES,
+    ACCOUNT_TYPES
 )
 from stock_api import get_stock_info
 
@@ -42,7 +45,7 @@ def show_transaction_form(edit_id: int = None):
         'quantity': 100,
         'price': 0.0,
         'notes': '',
-        'category': 'その他',
+        'category': '上昇トレンド',
         'account_type': '現物'
     }
     
@@ -104,20 +107,28 @@ def show_transaction_form(edit_id: int = None):
             
             account_type = st.selectbox(
                 "口座種別",
-                options=['現物', '信用'],
-                index=0 if default_values['account_type'] == '現物' else 1
+                options=ACCOUNT_TYPES,
+                index=ACCOUNT_TYPES.index(default_values['account_type']) if default_values['account_type'] in ACCOUNT_TYPES else 0
             )
             
             category = st.selectbox(
-                "カテゴリ",
-                options=['成長株', '高配当株', 'バリュー株', 'その他'],
-                index=['成長株', '高配当株', 'バリュー株', 'その他'].index(default_values['category']) if default_values['category'] in ['成長株', '高配当株', 'バリュー株', 'その他'] else 3
+                "📊 テクニカル状態",
+                options=CATEGORIES,
+                index=CATEGORIES.index(default_values['category']) if default_values['category'] in CATEGORIES else 0,
+                help="エントリー時の相場状況"
+            )
+            
+            entry_strategy = st.selectbox(
+                "🎯 エントリー戦略",
+                options=ENTRY_STRATEGIES,
+                index=0,
+                help="どのような戦略でエントリーしたか"
             )
             
             notes = st.text_area(
                 "メモ",
                 value=default_values['notes'],
-                placeholder="取引メモ"
+                placeholder="取引の根拠やメモ"
             )
             
             # 取得額の計算表示
@@ -143,6 +154,9 @@ def show_transaction_form(edit_id: int = None):
                 st.error("単価は0より大きい値を入力してください")
                 return
             
+            # エントリー戦略をメモに含める
+            final_notes = f"【戦略: {entry_strategy}】{notes}" if notes else f"【戦略: {entry_strategy}】"
+            
             # 取引を保存
             try:
                 if edit_id:
@@ -154,7 +168,7 @@ def show_transaction_form(edit_id: int = None):
                         quantity=quantity,
                         price=price,
                         transaction_date=str(transaction_date),
-                        notes=notes,
+                        notes=final_notes,
                         category=category,
                         account_type=account_type
                     )
@@ -169,7 +183,7 @@ def show_transaction_form(edit_id: int = None):
                         quantity=quantity,
                         price=price,
                         transaction_date=str(transaction_date),
-                        notes=notes,
+                        notes=final_notes,
                         category=category,
                         account_type=account_type
                     )
