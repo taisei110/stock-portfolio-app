@@ -273,7 +273,7 @@ with st.sidebar:
         
         quantity = st.number_input(
             "株数 *", min_value=1,
-            value=existing['quantity'] if existing else 100, step=1
+            value=existing['quantity'] if existing else 100, step=100
         )
         
         price = st.number_input(

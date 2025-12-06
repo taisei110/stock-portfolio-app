@@ -90,7 +90,7 @@ def show_transaction_form(edit_id: int = None):
                 "株数 *",
                 min_value=1,
                 value=default_values['quantity'],
-                step=1
+                step=100
             )
         
         with col2:
