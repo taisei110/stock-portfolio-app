@@ -439,12 +439,20 @@ def get_unique_tickers() -> list[str]:
         return [row[0] for row in result.fetchall()]
 
 
-def get_all_transactions() -> list[dict]:
+def get_all_transactions(category_filter: Optional[list[str]] = None) -> list[dict]:
     """全ての取引記録を日付の降順で取得"""
     with engine.connect() as conn:
-        result = conn.execute(text(
-            "SELECT * FROM transactions ORDER BY transaction_date DESC, id DESC"
-        ))
+        query_str = "SELECT * FROM transactions"
+        params = {}
+        
+        if category_filter:
+            placeholders = ", ".join([f":cat{i}" for i in range(len(category_filter))])
+            params = {f"cat{i}": cat for i, cat in enumerate(category_filter)}
+            query_str += f" WHERE category IN ({placeholders})"
+        
+        query_str += " ORDER BY transaction_date DESC, id DESC"
+        
+        result = conn.execute(text(query_str), params)
         columns = result.keys()
         return [dict(zip(columns, row)) for row in result.fetchall()]
 
