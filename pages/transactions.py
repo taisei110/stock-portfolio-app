@@ -283,28 +283,47 @@ def show_transaction_form(edit_id: int = None):
         if image_url:
             try:
                 with st.spinner("画像を取得中..."):
-                    # TradingViewのスナップショットURLを直接画像URLに変換
+                    actual_image_url = image_url
+                    
+                    # TradingViewのスナップショットURL（/x/形式）の場合、ページからOGP画像URLを取得
                     if "tradingview.com/x/" in image_url:
-                        # TradingViewのスナップショットページから画像URLを抽出
-                        image_url = image_url.replace("www.tradingview.com/x/", "s3.tradingview.com/snapshots/") + ".png"
+                        try:
+                            # ページを取得してOGPタグから画像URLを抽出
+                            page_response = requests.get(image_url, timeout=10)
+                            page_response.raise_for_status()
+                            
+                            # og:imageタグを探す
+                            import re
+                            og_match = re.search(r'<meta property="og:image" content="([^"]+)"', page_response.text)
+                            if og_match:
+                                actual_image_url = og_match.group(1)
+                                st.caption(f"📎 取得した画像URL: {actual_image_url[:50]}...")
+                            else:
+                                st.warning("⚠️ TradingViewページから画像URLを取得できませんでした。画像の直接URLを使用してください。")
+                                st.info("💡 TradingViewでチャートを右クリック → 「画像をコピー」→ 画像を貼り付けてURLを取得してください。")
+                                actual_image_url = None
+                        except Exception as e:
+                            st.warning(f"⚠️ TradingViewページの取得に失敗しました: {str(e)}")
+                            actual_image_url = None
                     
-                    # 画像をダウンロード
-                    response = requests.get(image_url, timeout=10)
-                    response.raise_for_status()
-                    
-                    # コンテンツタイプを確認
-                    content_type = response.headers.get('content-type', '')
-                    if 'image' in content_type:
-                        image_bytes = response.content
-                        if len(image_bytes) > 5 * 1024 * 1024:
-                            st.warning("⚠️ 画像サイズが大きすぎます（最大5MB）")
+                    if actual_image_url:
+                        # 画像をダウンロード
+                        response = requests.get(actual_image_url, timeout=10)
+                        response.raise_for_status()
+                        
+                        # コンテンツタイプを確認
+                        content_type = response.headers.get('content-type', '')
+                        if 'image' in content_type:
+                            image_bytes = response.content
+                            if len(image_bytes) > 5 * 1024 * 1024:
+                                st.warning("⚠️ 画像サイズが大きすぎます（最大5MB）")
+                            else:
+                                chart_image = base64.b64encode(image_bytes).decode('utf-8')
+                                st.success(f"✅ 画像を取得しました（{len(image_bytes) / 1024:.1f} KB）")
+                                # プレビュー表示
+                                st.image(image_bytes, caption="取得した画像", use_container_width=True)
                         else:
-                            chart_image = base64.b64encode(image_bytes).decode('utf-8')
-                            st.success(f"✅ 画像を取得しました（{len(image_bytes) / 1024:.1f} KB）")
-                            # プレビュー表示
-                            st.image(image_bytes, caption="取得した画像", use_container_width=True)
-                    else:
-                        st.warning("⚠️ 画像として認識できませんでした。直接の画像URLを試してください。")
+                            st.warning("⚠️ 画像として認識できませんでした。直接の画像URLを試してください。")
             except requests.exceptions.Timeout:
                 st.error("⏱️ タイムアウト: URLから画像を取得できませんでした")
             except requests.exceptions.RequestException as e:
