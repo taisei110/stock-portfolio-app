@@ -210,13 +210,31 @@ def show_transaction_form(edit_id: int = None):
             # エントリー戦略をメモに含める
             final_notes = f"【戦略: {entry_strategy}】{notes}" if notes else f"【戦略: {entry_strategy}】"
             
+            # 会社名の解決
+            target_company_name = None
+            
+            # 1. 検索結果から選択されている場合（銘柄コードが一致することを確認）
+            if session_key in st.session_state and st.session_state[session_key]:
+                if st.session_state[session_key]['ticker'] == ticker:
+                    target_company_name = st.session_state[session_key]['name']
+            
+            # 2. まだ会社名がない場合はAPIから取得を試みる
+            if not target_company_name:
+                with st.spinner("会社名を取得中..."):
+                    try:
+                        info = get_stock_info(ticker)
+                        if info:
+                            target_company_name = info.get('name')
+                    except Exception:
+                        pass
+            
             # 取引を保存
             try:
                 if edit_id:
                     success = update_transaction(
                         transaction_id=edit_id,
                         ticker=ticker,
-                        company_name=None,
+                        company_name=target_company_name,
                         transaction_type=transaction_type,
                         quantity=quantity,
                         price=price,
@@ -231,7 +249,7 @@ def show_transaction_form(edit_id: int = None):
                 else:
                     new_id = add_transaction(
                         ticker=ticker,
-                        company_name=None,
+                        company_name=target_company_name,
                         transaction_type=transaction_type,
                         quantity=quantity,
                         price=price,
