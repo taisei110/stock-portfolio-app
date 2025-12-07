@@ -145,7 +145,8 @@ def show_transaction_form(edit_id: int = None):
     company_name = st.text_input(
         "会社名（自動入力）",
         value=default_values['company_name'],
-        placeholder="銘柄コードから自動取得されます"
+        placeholder="銘柄コードから自動取得されます",
+        key=f"company_name{key_suffix}"
     )
     
     transaction_type = st.selectbox(
