@@ -254,26 +254,21 @@ def show_transaction_form(edit_id: int = None):
                     category=category,
                     account_type=account_type
                 )
-                        ticker=ticker,
-                        company_name=target_company_name,
-                        transaction_type=transaction_type,
-                        quantity=quantity,
-                        price=price,
-                        transaction_date=str(transaction_date),
-                        notes=final_notes,
-                        category=category,
-                        account_type=account_type
-                    )
-                    st.success(f"✅ 取引を登録しました！（ID: {new_id}）")
-                    
-                    # 銘柄情報を表示
-                    with st.spinner("銘柄情報を取得中..."):
-                        info = get_stock_info(ticker)
-                        if info:
-                            st.info(f"📊 {info.get('name', ticker)} を登録しました")
-                    
-            except Exception as e:
-                st.error(f"❌ エラーが発生しました: {e}")
+                
+                st.success(f"✅ 取引を登録しました！（ID: {new_id}）")
+                
+                # 銘柄情報を表示
+                with st.spinner("銘柄情報を取得中..."):
+                    info = get_stock_info(ticker)
+                    if info:
+                        st.info(f"📊 {info.get('name', ticker)} を登録しました")
+                
+                # フォームをクリアするために遅延リラン
+                time.sleep(1)
+                st.rerun()
+            
+        except Exception as e:
+            st.error(f"❌ エラーが発生しました: {e}")
 
 
 def show_transactions_list():
