@@ -8,6 +8,7 @@ import pandas as pd
 from datetime import date, datetime, time as dt_time
 import time
 import base64
+import requests
 
 from database import (
     add_transaction, 
@@ -228,27 +229,79 @@ def show_transaction_form(edit_id: int = None):
     
     # チャート画像アップロード
     st.markdown("##### 📊 チャート画像（任意）")
-    uploaded_file = st.file_uploader(
-        "TradingViewなどのスクリーンショットをアップロード",
-        type=["png", "jpg", "jpeg"],
-        help="エントリー時のチャート画像を保存できます（最大5MB）"
+    
+    # 入力方式の切り替え
+    image_input_method = st.radio(
+        "入力方式",
+        ["📁 ファイルをアップロード", "🔗 URLを貼り付け"],
+        horizontal=True,
+        label_visibility="collapsed"
     )
     
     # 画像をBase64にエンコード
     chart_image = None
-    if uploaded_file is not None:
-        # ファイルサイズチェック（5MB制限）
-        if uploaded_file.size > 5 * 1024 * 1024:
-            st.warning("⚠️ 画像サイズが大きすぎます（最大5MB）")
-        else:
-            image_bytes = uploaded_file.read()
-            chart_image = base64.b64encode(image_bytes).decode('utf-8')
-            st.success(f"✅ 画像をアップロードしました（{len(image_bytes) / 1024:.1f} KB）")
-    elif default_values['chart_image']:
-        # 既存の画像がある場合は保持
+    
+    if image_input_method == "📁 ファイルをアップロード":
+        uploaded_file = st.file_uploader(
+            "TradingViewなどのスクリーンショットをアップロード",
+            type=["png", "jpg", "jpeg"],
+            help="エントリー時のチャート画像を保存できます（最大5MB）"
+        )
+        
+        if uploaded_file is not None:
+            # ファイルサイズチェック（5MB制限）
+            if uploaded_file.size > 5 * 1024 * 1024:
+                st.warning("⚠️ 画像サイズが大きすぎます（最大5MB）")
+            else:
+                image_bytes = uploaded_file.read()
+                chart_image = base64.b64encode(image_bytes).decode('utf-8')
+                st.success(f"✅ 画像をアップロードしました（{len(image_bytes) / 1024:.1f} KB）")
+                # プレビュー表示
+                st.image(image_bytes, caption="アップロードされた画像", use_container_width=True)
+    
+    else:  # URL入力
+        image_url = st.text_input(
+            "画像URL",
+            placeholder="https://www.tradingview.com/x/xxxxxxxxx/ または画像の直接URL",
+            help="TradingViewのスナップショットURLまたは画像の直接URLを入力"
+        )
+        
+        if image_url:
+            try:
+                with st.spinner("画像を取得中..."):
+                    # TradingViewのスナップショットURLを直接画像URLに変換
+                    if "tradingview.com/x/" in image_url:
+                        # TradingViewのスナップショットページから画像URLを抽出
+                        image_url = image_url.replace("www.tradingview.com/x/", "s3.tradingview.com/snapshots/") + ".png"
+                    
+                    # 画像をダウンロード
+                    response = requests.get(image_url, timeout=10)
+                    response.raise_for_status()
+                    
+                    # コンテンツタイプを確認
+                    content_type = response.headers.get('content-type', '')
+                    if 'image' in content_type:
+                        image_bytes = response.content
+                        if len(image_bytes) > 5 * 1024 * 1024:
+                            st.warning("⚠️ 画像サイズが大きすぎます（最大5MB）")
+                        else:
+                            chart_image = base64.b64encode(image_bytes).decode('utf-8')
+                            st.success(f"✅ 画像を取得しました（{len(image_bytes) / 1024:.1f} KB）")
+                            # プレビュー表示
+                            st.image(image_bytes, caption="取得した画像", use_container_width=True)
+                    else:
+                        st.warning("⚠️ 画像として認識できませんでした。直接の画像URLを試してください。")
+            except requests.exceptions.Timeout:
+                st.error("⏱️ タイムアウト: URLから画像を取得できませんでした")
+            except requests.exceptions.RequestException as e:
+                st.error(f"❌ 画像の取得に失敗しました: {str(e)}")
+            except Exception as e:
+                st.error(f"❌ エラー: {str(e)}")
+    
+    # 既存の画像がある場合（新しい画像がアップロードされていない場合）
+    if chart_image is None and default_values['chart_image']:
         chart_image = default_values['chart_image']
         st.info("📎 既存のチャート画像があります")
-        # 既存画像のプレビュー
         try:
             st.image(base64.b64decode(chart_image), caption="保存済みのチャート画像", use_container_width=True)
         except Exception:
