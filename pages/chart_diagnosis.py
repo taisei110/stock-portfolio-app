@@ -3,10 +3,12 @@
 TradingViewなどのチャートスクリーンショットをAIが分析・採点
 """
 
+import io
 import streamlit as st
 from PIL import Image
 
 from analysis_agent import diagnose_chart_image, check_api_status
+from utils import get_image_bytes_from_url
 
 
 def show_chart_diagnosis():
@@ -29,17 +31,42 @@ def show_chart_diagnosis():
     
     st.markdown("---")
     
-    # 画像アップローダー
-    uploaded_file = st.file_uploader(
-        "📤 チャート画像をアップロード",
-        type=["png", "jpg", "jpeg"],
-        help="TradingViewやMT4/MT5などのチャートスクリーンショットをアップロードしてください"
-    )
+    # 画像入力方法の選択
+    input_method = st.radio("画像入力方法", ["📤 ファイルアップロード", "🌐 画像URL / TradingView"], horizontal=True)
     
+    target_image = None
+    
+    if input_method == "📤 ファイルアップロード":
+        uploaded_file = st.file_uploader(
+            "チャート画像をアップロード",
+            type=["png", "jpg", "jpeg"],
+            help="TradingViewやMT4/MT5などのチャートスクリーンショットをアップロードしてください"
+        )
+        if uploaded_file is not None:
+            target_image = Image.open(uploaded_file)
+            
+    else:
+        url_input = st.text_input(
+            "画像URLまたはTradingViewリンク",
+            placeholder="https://www.tradingview.com/x/xxxxxxxx/",
+            help="TradingViewのカメラアイコンから取得できるリンク、または画像の直接リンクを入力してください"
+        )
+        if url_input:
+            with st.spinner("画像を取得中..."):
+                img_bytes, error_msg = get_image_bytes_from_url(url_input)
+                if img_bytes:
+                    try:
+                        target_image = Image.open(io.BytesIO(img_bytes))
+                    except Exception as e:
+                        st.error(f"画像の読み込みに失敗しました: {e}")
+                else:
+                    st.error(f"画像の取得に失敗しました: {error_msg}")
+                    if "TradingView" in str(error_msg):
+                        st.info("💡 TradingViewでチャート右上のカメラアイコン📸 → 「リンクをコピー」で取得したURLを貼り付けてください。")
+
     # プレビュー表示
-    if uploaded_file is not None:
-        image = Image.open(uploaded_file)
-        st.image(image, caption="アップロードされた画像", use_container_width=True)
+    if target_image is not None:
+        st.image(target_image, caption="分析対象画像", use_container_width=True)
     
     st.markdown("---")
     
@@ -66,20 +93,17 @@ def show_chart_diagnosis():
             "🔍 AIに診断してもらう",
             type="primary",
             use_container_width=True,
-            disabled=(uploaded_file is None)
+            disabled=(target_image is None)
         )
     
-    if uploaded_file is None:
-        st.info("👆 まずチャート画像をアップロードしてください")
+    if target_image is None:
+        st.info("👆 まずチャート画像をアップロードするかURLを入力してください")
     
     # 診断実行
-    if diagnose_button and uploaded_file is not None:
+    if diagnose_button and target_image is not None:
         with st.spinner("🤖 AIがチャートを分析中... しばらくお待ちください"):
-            # 画像を再度読み込み
-            image = Image.open(uploaded_file)
-            
             # 診断実行
-            result = diagnose_chart_image(image, user_memo)
+            result = diagnose_chart_image(target_image, user_memo)
         
         # 結果表示
         st.markdown("## 📊 診断結果")
