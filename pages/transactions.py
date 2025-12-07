@@ -109,145 +109,151 @@ def show_transaction_form(edit_id: int = None):
     st.markdown("---")
     
     # フォームキーを動的に生成（編集時は異なるキーを使用）
-    form_key = f"transaction_form_{edit_id}" if edit_id else "transaction_form_new"
+    st.subheader("取引情報を入力" if not edit_id else f"取引ID {edit_id} を編集")
     
-    with st.form(key=form_key, clear_on_submit=True):
-        st.subheader("取引情報を入力" if not edit_id else f"取引ID {edit_id} を編集")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # 銘柄コード入力のキーを動的に生成して、値の更新を確実に反映させる
+        ticker_input_key = f"ticker_{edit_id}_{default_values['ticker']}" if edit_id else f"ticker_new_{default_values['ticker']}"
         
-        col1, col2 = st.columns(2)
+        ticker = st.text_input(
+            "銘柄コード *",
+            value=default_values['ticker'],
+            placeholder="例: 7203.T（トヨタ）",
+            help="上の検索欄で銘柄を選択すると自動入力されます",
+            key=ticker_input_key
+        )
         
-        with col1:
-            # 銘柄コード入力のキーを動的に生成して、値の更新を確実に反映させる
-            # 選択された銘柄が変わるとキーも変わり、再描画される
-            ticker_input_key = f"ticker_{edit_id}_{default_values['ticker']}" if edit_id else f"ticker_new_{default_values['ticker']}"
-            
-            ticker = st.text_input(
-                "銘柄コード *",
-                value=default_values['ticker'],
-                placeholder="例: 7203.T（トヨタ）",
-                help="上の検索欄で銘柄を選択すると自動入力されます",
-                key=ticker_input_key
-            )
-            
-            transaction_date = st.date_input(
-                "取引日 *",
-                value=default_values['transaction_date'],
-                max_value=date.today()
-            )
-            
-            transaction_type = st.selectbox(
-                "売買種別 *",
-                options=['buy', 'sell'],
-                index=0 if default_values['transaction_type'] == 'buy' else 1,
-                format_func=lambda x: '買い' if x == 'buy' else '売り'
-            )
-            
-            quantity = st.number_input(
-                "株数 *",
-                min_value=1,
-                value=default_values['quantity'],
-                step=100
-            )
+        transaction_date = st.date_input(
+            "取引日 *",
+            value=default_values['transaction_date'],
+            max_value=date.today()
+        )
         
-        with col2:
-            price = st.number_input(
-                "単価（円） *",
-                min_value=0.0,
-                value=default_values['price'],
-                step=0.01,
-                format="%.2f"
-            )
-            
-            account_type = st.selectbox(
-                "口座種別",
-                options=ACCOUNT_TYPES,
-                index=ACCOUNT_TYPES.index(default_values['account_type']) if default_values['account_type'] in ACCOUNT_TYPES else 0
-            )
-            
-            category = st.selectbox(
-                "📊 テクニカル状態",
-                options=CATEGORIES,
-                index=CATEGORIES.index(default_values['category']) if default_values['category'] in CATEGORIES else 0,
-                help="エントリー時の相場状況"
-            )
-            
-            entry_strategy = st.selectbox(
-                "🎯 エントリー戦略",
-                options=ENTRY_STRATEGIES,
-                index=0,
-                help="どのような戦略でエントリーしたか"
-            )
-            
-            notes = st.text_area(
-                "メモ",
-                value=default_values['notes'],
-                placeholder="取引の根拠やメモ"
-            )
-            
-            # 取得額の計算表示
-            total_cost = quantity * price
-            st.metric("取得額合計", f"¥{total_cost:,.0f}")
+        transaction_type = st.selectbox(
+            "売買種別 *",
+            options=['buy', 'sell'],
+            index=0 if default_values['transaction_type'] == 'buy' else 1,
+            format_func=lambda x: '買い' if x == 'buy' else '売り'
+        )
         
-        col_btn1, col_btn2 = st.columns(2)
+        quantity = st.number_input(
+            "株数 *",
+            min_value=1,
+            value=default_values['quantity'],
+            step=100
+        )
+    
+    with col2:
+        price = st.number_input(
+            "単価（円） *",
+            min_value=0.0,
+            value=default_values['price'],
+            step=0.01,
+            format="%.2f"
+        )
         
-        with col_btn1:
-            submit = st.form_submit_button(
-                "💾 保存" if not edit_id else "✏️ 更新",
-                type="primary",
-                use_container_width=True
-            )
+        account_type = st.selectbox(
+            "口座種別",
+            options=ACCOUNT_TYPES,
+            index=ACCOUNT_TYPES.index(default_values['account_type']) if default_values['account_type'] in ACCOUNT_TYPES else 0
+        )
         
-        if submit:
-            # バリデーション
-            if not ticker:
-                st.error("銘柄コードを入力してください")
-                return
-            
-            if price <= 0:
-                st.error("単価は0より大きい値を入力してください")
-                return
-            
-            # エントリー戦略をメモに含める
-            final_notes = f"【戦略: {entry_strategy}】{notes}" if notes else f"【戦略: {entry_strategy}】"
-            
-            # 会社名の解決
-            target_company_name = None
-            
-            # 1. 検索結果から選択されている場合（銘柄コードが一致することを確認）
-            if session_key in st.session_state and st.session_state[session_key]:
-                if st.session_state[session_key]['ticker'] == ticker:
-                    target_company_name = st.session_state[session_key]['name']
-            
-            # 2. まだ会社名がない場合はAPIから取得を試みる
-            if not target_company_name:
-                with st.spinner("会社名を取得中..."):
-                    try:
-                        info = get_stock_info(ticker)
-                        if info:
-                            target_company_name = info.get('name')
-                    except Exception:
-                        pass
-            
-            # 取引を保存
-            try:
-                if edit_id:
-                    success = update_transaction(
-                        transaction_id=edit_id,
-                        ticker=ticker,
-                        company_name=target_company_name,
-                        transaction_type=transaction_type,
-                        quantity=quantity,
-                        price=price,
-                        transaction_date=str(transaction_date),
-                        notes=final_notes,
-                        category=category,
-                        account_type=account_type
-                    )
-                    if success:
-                        st.success(f"✅ 取引ID {edit_id} を更新しました！")
-                        st.rerun()
-                else:
-                    new_id = add_transaction(
+        category = st.selectbox(
+            "📊 テクニカル状態",
+            options=CATEGORIES,
+            index=CATEGORIES.index(default_values['category']) if default_values['category'] in CATEGORIES else 0,
+            help="エントリー時の相場状況"
+        )
+        
+        entry_strategy = st.selectbox(
+            "🎯 エントリー戦略",
+            options=ENTRY_STRATEGIES,
+            index=0,
+            help="どのような戦略でエントリーしたか"
+        )
+        
+        notes = st.text_area(
+            "メモ",
+            value=default_values['notes'],
+            placeholder="取引の根拠やメモ"
+        )
+        
+        # 取得額の計算表示
+        total_cost = quantity * price
+        st.metric("取得額合計", f"¥{total_cost:,.0f}")
+    
+    col_btn1, col_btn2 = st.columns(2)
+    
+    with col_btn1:
+        submit = st.button(
+            "💾 保存" if not edit_id else "✏️ 更新",
+            type="primary",
+            use_container_width=True
+        )
+    
+    if submit:
+        # バリデーション
+        if not ticker:
+            st.error("銘柄コードを入力してください")
+            return
+        
+        if price <= 0:
+            st.error("単価は0より大きい値を入力してください")
+            return
+        
+        # エントリー戦略をメモに含める
+        final_notes = f"【戦略: {entry_strategy}】{notes}" if notes else f"【戦略: {entry_strategy}】"
+        
+        # 会社名の解決
+        target_company_name = None
+        
+        # 1. 検索結果から選択されている場合（銘柄コードが一致することを確認）
+        if session_key in st.session_state and st.session_state[session_key]:
+            if st.session_state[session_key]['ticker'] == ticker:
+                target_company_name = st.session_state[session_key]['name']
+        
+        # 2. まだ会社名がない場合はAPIから取得を試みる
+        if not target_company_name:
+            with st.spinner("会社名を取得中..."):
+                try:
+                    info = get_stock_info(ticker)
+                    if info:
+                        target_company_name = info.get('name')
+                except Exception:
+                    pass
+        
+        # 取引を保存
+        try:
+            if edit_id:
+                success = update_transaction(
+                    transaction_id=edit_id,
+                    ticker=ticker,
+                    company_name=target_company_name,
+                    transaction_type=transaction_type,
+                    quantity=quantity,
+                    price=price,
+                    transaction_date=str(transaction_date),
+                    notes=final_notes,
+                    category=category,
+                    account_type=account_type
+                )
+                if success:
+                    st.success(f"✅ 取引ID {edit_id} を更新しました！")
+                    st.rerun()
+            else:
+                new_id = add_transaction(
+                    ticker=ticker,
+                    company_name=target_company_name,
+                    transaction_type=transaction_type,
+                    quantity=quantity,
+                    price=price,
+                    transaction_date=str(transaction_date),
+                    notes=final_notes,
+                    category=category,
+                    account_type=account_type
+                )
                         ticker=ticker,
                         company_name=target_company_name,
                         transaction_type=transaction_type,
