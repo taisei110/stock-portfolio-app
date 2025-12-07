@@ -62,8 +62,10 @@ def show_transaction_form(edit_id: int = None):
                 'category': existing.get('category', 'その他'),
                 'account_type': existing.get('account_type', '現物')
             }
+    # フォームキーを動的に生成（編集時は異なるキーを使用）
+    form_key = f"transaction_form_{edit_id}" if edit_id else "transaction_form_new"
     
-    with st.form(key="transaction_form", clear_on_submit=True):
+    with st.form(key=form_key, clear_on_submit=True):
         st.subheader("取引情報を入力" if not edit_id else f"取引ID {edit_id} を編集")
         
         col1, col2 = st.columns(2)
