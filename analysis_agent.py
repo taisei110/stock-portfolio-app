@@ -21,11 +21,11 @@ if ENV_PATH.exists():
 
 # 利用可能なモデルとその無料枠設定
 AVAILABLE_MODELS = {
-    "gemini-1.5-flash": {"name": "⚡ Gemini 1.5 Flash (高速)", "rpd": 1500},
+    "gemini-2.0-flash-exp": {"name": "⚡ Gemini 2.0 Flash (最新・高速)", "rpd": 1500},
+    "gemini-1.5-flash": {"name": "⚡ Gemini 1.5 Flash (安定)", "rpd": 1500},
     "gemini-1.5-pro": {"name": "🔥 Gemini 1.5 Pro (高性能)", "rpd": 50},
-    "gemini-2.5-pro": {"name": "✨ Gemini 2.5 Pro (最新)", "rpd": 50},
 }
-DEFAULT_MODEL = "gemini-2.5-pro"
+DEFAULT_MODEL = "gemini-1.5-flash"
 
 
 def get_pacific_date() -> str:

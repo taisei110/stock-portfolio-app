@@ -11,7 +11,16 @@ import pandas as pd
 
 from database import get_portfolio_summary, get_all_transactions
 from stock_api import get_historical_data, normalize_ticker, get_stock_info, get_japanese_company_name
-from analysis_agent import get_api_key
+from analysis_agent import (
+    get_api_key, 
+    AVAILABLE_MODELS, 
+    DEFAULT_MODEL, 
+    get_remaining_quota, 
+    get_usage_count, 
+    increment_usage,
+    get_gemini_model,
+    init_gemini
+)
 
 # ページ設定
 st.set_page_config(page_title="エントリー分析", page_icon="🎯", layout="wide")
@@ -28,6 +37,39 @@ if 'selected_ticker_entry' not in st.session_state:
     st.session_state.selected_ticker_entry = None
 if 'selected_tx_context' not in st.session_state:
     st.session_state.selected_tx_context = ''
+if 'selected_model' not in st.session_state:
+    st.session_state.selected_model = DEFAULT_MODEL
+
+# サイドバー：モデル設定
+with st.sidebar:
+    st.header("⚙️ 設定")
+    
+    # モデル選択
+    selected_model = st.selectbox(
+        "🤖 使用AIモデル",
+        options=list(AVAILABLE_MODELS.keys()),
+        format_func=lambda x: AVAILABLE_MODELS[x]["name"],
+        index=list(AVAILABLE_MODELS.keys()).index(st.session_state.selected_model) if st.session_state.selected_model in AVAILABLE_MODELS else 0,
+        help="分析に使用するAIモデルを選択。Flashは高速・無料枠大、Proは高性能・無料枠少。",
+        key="model_selector_entry"
+    )
+    st.session_state.selected_model = selected_model
+    
+    # クォータ情報
+    remaining = get_remaining_quota(selected_model)
+    max_rpd = AVAILABLE_MODELS[selected_model]["rpd"]
+    
+    st.markdown("##### 📊 本日の残り回数")
+    if remaining == 0:
+        st.error(f"⚠️ {remaining} / {max_rpd} 回 (制限到達)")
+        st.info("💡 別のモデル（Flashなど）に切り替えてください")
+    elif remaining < max_rpd * 0.2:
+        st.warning(f"⚠️ {remaining} / {max_rpd} 回")
+    else:
+        st.progress(remaining / max_rpd)
+        st.caption(f"{remaining} / {max_rpd} 回")
+    
+    st.markdown("---")
 
 # 入力モード選択
 st.markdown("### 📊 分析対象の選択")
@@ -340,16 +382,13 @@ if ticker_input:
             )
             
             if st.button("🤖 AIでエントリーを評価", type="primary", use_container_width=True):
-                api_key = get_api_key()
-                
-                if not api_key:
+                if not init_gemini():
                     st.error("⚠️ Gemini API キーが設定されていません。Secretsにキーを追加してください。")
                 else:
-                    with st.spinner("AIが分析中..."):
+                    with st.spinner(f"🤖 {AVAILABLE_MODELS[st.session_state.selected_model]['name']} が分析中..."):
                         try:
-                            import google.generativeai as genai
-                            genai.configure(api_key=api_key)
-                            model = genai.GenerativeModel('gemini-2.5-flash')
+                            # 選択されたモデルを取得
+                            model = get_gemini_model(st.session_state.selected_model)
                             
                             # チャートデータの要約
                             recent_data = hist_data.tail(10)
@@ -414,11 +453,19 @@ if ticker_input:
                             
                             response = model.generate_content(prompt)
                             
+                            # 使用回数をカウント
+                            increment_usage(st.session_state.selected_model)
+                            
                             st.markdown("---")
                             st.markdown(response.text)
                             
                         except Exception as e:
-                            st.error(f"AI評価中にエラーが発生しました: {e}")
+                            error_msg = str(e)
+                            if "429" in error_msg or "ResourceExhausted" in error_msg or "Quota exceeded" in error_msg:
+                                st.error(f"⚠️ {AVAILABLE_MODELS[st.session_state.selected_model]['name']} の使用制限（クォータ）を超過しました。")
+                                st.info("💡 サイドバーから「Gemini 1.5 Flash」などの軽量モデルに切り替えるか、しばらく待ってから再試行してください。")
+                            else:
+                                st.error(f"AI評価中にエラーが発生しました: {e}")
         else:
             st.info("📍 上のフォームでエントリーポイントを追加してください。買い/売り、損切り、利確ラインを設定できます。")
     else:
