@@ -117,11 +117,16 @@ def show_transaction_form(edit_id: int = None):
         col1, col2 = st.columns(2)
         
         with col1:
+            # 銘柄コード入力のキーを動的に生成して、値の更新を確実に反映させる
+            # 選択された銘柄が変わるとキーも変わり、再描画される
+            ticker_input_key = f"ticker_{edit_id}_{default_values['ticker']}" if edit_id else f"ticker_new_{default_values['ticker']}"
+            
             ticker = st.text_input(
                 "銘柄コード *",
                 value=default_values['ticker'],
                 placeholder="例: 7203.T（トヨタ）",
-                help="上の検索欄で銘柄を選択すると自動入力されます"
+                help="上の検索欄で銘柄を選択すると自動入力されます",
+                key=ticker_input_key
             )
             
             transaction_date = st.date_input(
