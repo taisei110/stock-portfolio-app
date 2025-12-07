@@ -4,15 +4,117 @@ Google Gemini API を使用した取引分析
 """
 
 import os
+import json
 from pathlib import Path
 from typing import Optional
+from datetime import datetime, timezone, timedelta
 import google.generativeai as genai
+from dotenv import load_dotenv
 
 # .envファイルのパス（絶対パスで解決）
 ENV_PATH = Path(__file__).resolve().parent / ".env"
+USAGE_FILE = Path(__file__).resolve().parent / ".gemini_usage.json"
+
+# .envファイルを読み込む（存在する場合）
+if ENV_PATH.exists():
+    load_dotenv(ENV_PATH)
+
+# 利用可能なモデルとその無料枠設定
+AVAILABLE_MODELS = {
+    "gemini-1.5-flash": {"name": "⚡ Gemini 1.5 Flash (高速)", "rpd": 1500},
+    "gemini-1.5-pro": {"name": "🔥 Gemini 1.5 Pro (高性能)", "rpd": 50},
+    "gemini-2.5-pro": {"name": "✨ Gemini 2.5 Pro (最新)", "rpd": 50},
+}
+DEFAULT_MODEL = "gemini-2.5-pro"
+
+
+def get_pacific_date() -> str:
+    """太平洋時間の現在日付を取得（クォータリセット基準）"""
+    # 太平洋標準時 (PST) は UTC-8、太平洋夏時間 (PDT) は UTC-7
+    # 簡易的に UTC-8 で計算
+    pacific_tz = timezone(timedelta(hours=-8))
+    return datetime.now(pacific_tz).strftime("%Y-%m-%d")
+
+
+def get_usage_data() -> dict:
+    """使用回数データを読み込む"""
+    if not USAGE_FILE.exists():
+        return {"date": get_pacific_date(), "usage": {}}
+    
+    try:
+        with open(USAGE_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        # 日付が変わっていたらリセット
+        if data.get("date") != get_pacific_date():
+            return {"date": get_pacific_date(), "usage": {}}
+        
+        return data
+    except Exception:
+        return {"date": get_pacific_date(), "usage": {}}
+
+
+def save_usage_data(data: dict):
+    """使用回数データを保存"""
+    try:
+        with open(USAGE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def increment_usage(model_id: str):
+    """使用回数を+1"""
+    data = get_usage_data()
+    current = data["usage"].get(model_id, 0)
+    data["usage"][model_id] = current + 1
+    save_usage_data(data)
+
+
+def get_remaining_quota(model_id: str) -> int:
+    """残り使用回数を取得"""
+    if model_id not in AVAILABLE_MODELS:
+        return 0
+    
+    max_rpd = AVAILABLE_MODELS[model_id]["rpd"]
+    data = get_usage_data()
+    used = data["usage"].get(model_id, 0)
+    return max(0, max_rpd - used)
+
+
+def get_usage_count(model_id: str) -> int:
+    """本日の使用回数を取得"""
+    data = get_usage_data()
+    return data["usage"].get(model_id, 0)
+
 
 def get_api_key() -> str | None:
-    """直接.envファイルを読み込んでAPIキーを取得"""
+    """APIキーを取得（Streamlit Secrets優先、なければ.envファイル）"""
+    # 1. まずStreamlit Secretsをチェック（Streamlit Cloud用）
+    try:
+        import streamlit as st
+        # st.secretsが存在し、GEMINI_API_KEYが含まれているか確認
+        if hasattr(st, 'secrets'):
+            try:
+                api_key = st.secrets.get("GEMINI_API_KEY")
+                if api_key:
+                    return api_key
+            except Exception:
+                # secrets.tomlの形式が異なる場合を試す
+                try:
+                    if "GEMINI_API_KEY" in st.secrets:
+                        return st.secrets["GEMINI_API_KEY"]
+                except Exception:
+                    pass
+    except ImportError:
+        pass
+    
+    # 2. 環境変数をチェック
+    env_key = os.environ.get('GEMINI_API_KEY')
+    if env_key:
+        return env_key
+    
+    # 3. .envファイルを直接読み込む（ローカル開発用）
     try:
         if not ENV_PATH.exists():
             return None
@@ -44,14 +146,18 @@ def init_gemini() -> bool:
         return False
 
 
-def get_gemini_model():
+def get_gemini_model(model_id: str = None):
     """Geminiモデルを取得（テキスト生成用）"""
-    return genai.GenerativeModel('gemini-2.5-pro')
+    if model_id is None:
+        model_id = DEFAULT_MODEL
+    return genai.GenerativeModel(model_id)
 
 
-def get_vision_model():
+def get_vision_model(model_id: str = None):
     """画像認識対応のGeminiモデルを取得"""
-    return genai.GenerativeModel('gemini-1.5-pro')
+    if model_id is None:
+        model_id = "gemini-1.5-pro"
+    return genai.GenerativeModel(model_id)
 
 
 def diagnose_chart_image(image_data, user_memo: str) -> str:
@@ -96,8 +202,10 @@ def diagnose_chart_image(image_data, user_memo: str) -> str:
 """
     
     try:
-        model = get_vision_model()
+        model_id = "gemini-1.5-pro"  # 画像認識には1.5-proを使用
+        model = get_vision_model(model_id)
         response = model.generate_content([prompt, image_data])
+        increment_usage(model_id)  # 使用回数をカウント
         return response.text
     except Exception as e:
         return f"❌ 画像分析中にエラーが発生しました: {str(e)}"
@@ -133,19 +241,23 @@ def summarize_portfolio(portfolio_data: list[dict]) -> str:
     return "\n".join(summary)
 
 
-def get_trade_advice(query: str, context: str = "") -> str:
+def get_trade_advice(query: str, context: str = "", model_id: str = None) -> str:
     """
     トレードに関するアドバイスを取得
     
     Args:
         query: ユーザーからの質問または対象銘柄
         context: 補足情報（メモや状況など）
+        model_id: 使用するGeminiモデルのID
         
     Returns:
         AIからのアドバイス
     """
     if not init_gemini():
         return "❌ Gemini API キーが設定されていません。"
+    
+    if model_id is None:
+        model_id = DEFAULT_MODEL
     
     prompt = f"""あなたは経験豊富なトレードコーチです。
 ユーザーからの以下の質問やトピックについて、アドバイスを提供してください。
@@ -161,26 +273,31 @@ def get_trade_advice(query: str, context: str = "") -> str:
 """
     
     try:
-        model = get_gemini_model()
+        model = get_gemini_model(model_id)
         response = model.generate_content(prompt)
+        increment_usage(model_id)  # 使用回数をカウント
         return response.text
     except Exception as e:
         return f"❌ エラー: {str(e)}"
 
 
-def analyze_trade_history(transactions: list[dict], portfolio: list[dict]) -> str:
+def analyze_trade_history(transactions: list[dict], portfolio: list[dict], model_id: str = None) -> str:
     """
     取引履歴を分析してアドバイスを生成
     
     Args:
         transactions: 取引履歴リスト
         portfolio: ポートフォリオサマリー
+        model_id: 使用するGeminiモデルのID
     
     Returns:
         AIからの分析結果
     """
     if not init_gemini():
         return "❌ Gemini API キーが設定されていません。.envファイルにGEMINI_API_KEYを設定してください。"
+    
+    if model_id is None:
+        model_id = DEFAULT_MODEL
     
     # 取引データをテキストに変換
     tx_summary = []
@@ -219,8 +336,9 @@ def analyze_trade_history(transactions: list[dict], portfolio: list[dict]) -> st
 """
     
     try:
-        model = get_gemini_model()
+        model = get_gemini_model(model_id)
         response = model.generate_content(prompt)
+        increment_usage(model_id)  # 使用回数をカウント
         return response.text
     except Exception as e:
         return f"❌ AI分析中にエラーが発生しました: {str(e)}"

@@ -11,26 +11,25 @@ from stock_api import get_prices_for_tickers
 from analysis_agent import (
     check_api_status, 
     analyze_trade_history, 
-    get_trade_advice
+    get_trade_advice,
+    AVAILABLE_MODELS,
+    DEFAULT_MODEL,
+    get_remaining_quota,
+    get_usage_count,
+    get_api_key
 )
 
 def show_ai_coach():
     st.header("🤖 AIトレードコーチ")
 
-    # API接続状態を確認
-    from analysis_agent import ENV_PATH, get_api_key
-    api_key = get_api_key()
-    api_ok, api_msg = check_api_status()
-    
-    # デバッグ: API状態を表示
-    with st.expander("🔧 デバッグ情報", expanded=True):
-        st.write(f"ENV_PATH: `{ENV_PATH}`")
-        st.write(f"ENV exists: `{ENV_PATH.exists()}`")
-        st.write(f"API Key found: `{api_key[:10] + '...' if api_key else 'None'}`")
-        st.write(f"API OK: `{api_ok}`")
-        st.write(f"API Message: `{api_msg}`")
+    # セッション状態の初期化（モデル選択）
+    if 'selected_model' not in st.session_state:
+        st.session_state.selected_model = DEFAULT_MODEL
 
-    if not api_ok:
+    # API接続状態を確認
+    api_key = get_api_key()
+    
+    if not api_key:
         st.warning("⚠️ AI分析機能を利用するには `.env` ファイルに `GEMINI_API_KEY` を設定してください。")
         with st.expander("🔧 セットアップ方法"):
             st.markdown("""
@@ -47,7 +46,44 @@ def show_ai_coach():
             st.code("GEMINI_API_KEY=your_api_key_here", language="bash")
         return
 
-    st.success("✅ Gemini API 接続済み")
+    # モデル選択と使用状況を表示
+    st.markdown("---")
+    col_model, col_quota, col_used = st.columns([2, 1, 1])
+    
+    with col_model:
+        selected_model = st.selectbox(
+            "🤖 使用モデル",
+            options=list(AVAILABLE_MODELS.keys()),
+            format_func=lambda x: AVAILABLE_MODELS[x]["name"],
+            index=list(AVAILABLE_MODELS.keys()).index(st.session_state.selected_model),
+            key="model_selector"
+        )
+        st.session_state.selected_model = selected_model
+    
+    remaining = get_remaining_quota(selected_model)
+    used = get_usage_count(selected_model)
+    max_rpd = AVAILABLE_MODELS[selected_model]["rpd"]
+    
+    with col_quota:
+        # 残り回数に応じて色を変える
+        if remaining > max_rpd * 0.3:
+            st.metric("📊 残り", f"{remaining:,} 回")
+        elif remaining > 0:
+            st.metric("⚠️ 残り", f"{remaining:,} 回")
+        else:
+            st.metric("🚫 残り", "0 回")
+    
+    with col_used:
+        st.metric("📈 本日使用", f"{used:,} 回")
+    
+    # クォータ警告
+    if remaining == 0:
+        st.error(f"⚠️ {AVAILABLE_MODELS[selected_model]['name']} の本日の無料枠を使い切りました。別のモデルに切り替えるか、明日お試しください。")
+        return
+    elif remaining < 10:
+        st.warning(f"⚠️ 残り {remaining} 回です。使用量にご注意ください。")
+    
+    st.markdown("---")
 
     # セッション状態初期化
     if 'ai_analysis_result' not in st.session_state:
@@ -86,7 +122,7 @@ def show_ai_coach():
                     enriched_portfolio.append(p_copy)
 
                 # AI分析実行
-                result = analyze_trade_history(all_transactions, enriched_portfolio)
+                result = analyze_trade_history(all_transactions, enriched_portfolio, model_id=selected_model)
                 st.session_state.ai_analysis_result = result
         
         # 分析結果を表示
@@ -137,7 +173,7 @@ def show_ai_coach():
 
                 pf_context = f"現在のポートフォリオ評価額: 約{total_val:,.0f}円, 含み損益: 約{total_pl:+,.0f}円"
                 
-                advice = get_trade_advice(user_query, context=pf_context)
+                advice = get_trade_advice(user_query, context=pf_context, model_id=selected_model)
                 st.session_state.ai_advice_result = advice
         
         if st.session_state.ai_advice_result:
