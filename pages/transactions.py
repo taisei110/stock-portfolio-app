@@ -5,7 +5,8 @@
 
 import streamlit as st
 import pandas as pd
-from datetime import date
+from datetime import date, datetime, time as dt_time
+import time
 
 from database import (
     add_transaction, 
@@ -44,10 +45,17 @@ def show_transaction_form(edit_id: int = None):
     if session_key not in st.session_state:
         st.session_state[session_key] = None
     
+    # 現在時刻ボタン用のセッション状態
+    use_current_time_key = f'use_current_time_{edit_id}' if edit_id else 'use_current_time_new'
+    if use_current_time_key not in st.session_state:
+        st.session_state[use_current_time_key] = False
+    
     # 編集モードの場合、既存データを取得
     default_values = {
         'ticker': '',
+        'company_name': '',
         'transaction_date': date.today(),
+        'transaction_time': dt_time(9, 0),
         'transaction_type': 'buy',
         'quantity': 100,
         'price': 0.0,
@@ -61,7 +69,9 @@ def show_transaction_form(edit_id: int = None):
         if existing:
             default_values = {
                 'ticker': existing['ticker'],
+                'company_name': existing.get('company_name', ''),
                 'transaction_date': pd.to_datetime(existing['transaction_date']).date(),
+                'transaction_time': datetime.strptime(existing.get('transaction_time', '09:00'), "%H:%M").time() if existing.get('transaction_time') else dt_time(9, 0),
                 'transaction_type': existing.get('transaction_type', 'buy'),
                 'quantity': existing['quantity'],
                 'price': float(existing['price']) if existing['price'] else 0.0,
@@ -105,84 +115,103 @@ def show_transaction_form(edit_id: int = None):
     # 選択された銘柄から値を取得
     if st.session_state[session_key]:
         default_values['ticker'] = st.session_state[session_key]['ticker']
+        default_values['company_name'] = st.session_state[session_key]['name']
     
     st.markdown("---")
     
     # フォームキーを動的に生成（編集時は異なるキーを使用）
     st.subheader("取引情報を入力" if not edit_id else f"取引ID {edit_id} を編集")
     
-    col1, col2 = st.columns(2)
+    # 銘柄コード入力のキーを動的に生成
+    ticker_input_key = f"ticker_{edit_id}_{default_values['ticker']}" if edit_id else f"ticker_new_{default_values['ticker']}"
     
-    with col1:
-        # 銘柄コード入力のキーを動的に生成して、値の更新を確実に反映させる
-        ticker_input_key = f"ticker_{edit_id}_{default_values['ticker']}" if edit_id else f"ticker_new_{default_values['ticker']}"
-        
-        ticker = st.text_input(
-            "銘柄コード *",
-            value=default_values['ticker'],
-            placeholder="例: 7203.T（トヨタ）",
-            help="上の検索欄で銘柄を選択すると自動入力されます",
-            key=ticker_input_key
-        )
-        
-        transaction_date = st.date_input(
-            "取引日 *",
-            value=default_values['transaction_date'],
-            max_value=date.today()
-        )
-        
-        transaction_type = st.selectbox(
-            "売買種別 *",
-            options=['buy', 'sell'],
-            index=0 if default_values['transaction_type'] == 'buy' else 1,
-            format_func=lambda x: '買い' if x == 'buy' else '売り'
-        )
-        
-        quantity = st.number_input(
-            "株数 *",
-            min_value=1,
-            value=default_values['quantity'],
-            step=100
-        )
+    ticker = st.text_input(
+        "銘柄コード *",
+        value=default_values['ticker'],
+        placeholder="例: 7203.T（トヨタ）",
+        help="上の検索欄で銘柄を選択すると自動入力されます",
+        key=ticker_input_key
+    )
     
-    with col2:
-        price = st.number_input(
-            "単価（円） *",
-            min_value=0.0,
-            value=default_values['price'],
-            step=0.01,
-            format="%.2f"
-        )
-        
-        account_type = st.selectbox(
-            "口座種別",
-            options=ACCOUNT_TYPES,
-            index=ACCOUNT_TYPES.index(default_values['account_type']) if default_values['account_type'] in ACCOUNT_TYPES else 0
-        )
-        
-        category = st.selectbox(
-            "📊 テクニカル状態",
-            options=CATEGORIES,
-            index=CATEGORIES.index(default_values['category']) if default_values['category'] in CATEGORIES else 0,
-            help="エントリー時の相場状況"
-        )
-        
-        entry_strategy = st.selectbox(
-            "🎯 エントリー戦略",
-            options=ENTRY_STRATEGIES,
-            index=0,
-            help="どのような戦略でエントリーしたか"
-        )
-        
-        notes = st.text_area(
-            "メモ",
-            value=default_values['notes'],
-            placeholder="取引の根拠やメモ"
-        )
-        
-        # 取得額の計算表示
-        total_cost = quantity * price
-        st.metric("取得額合計", f"¥{total_cost:,.0f}")
+    company_name = st.text_input(
+        "会社名（自動入力）",
+        value=default_values['company_name'],
+        placeholder="銘柄コードから自動取得されます"
+    )
+    
+    transaction_type = st.selectbox(
+        "取引種別 *",
+        options=["buy", "sell"],
+        format_func=lambda x: "🟢 買い" if x == "buy" else "🔴 売り",
+        index=0 if default_values['transaction_type'] == 'buy' else 1
+    )
+    
+    # テクニカル状態選択
+    category = st.selectbox(
+        "📊 テクニカル状態",
+        options=CATEGORIES,
+        index=CATEGORIES.index(default_values['category']) if default_values['category'] in CATEGORIES else 0,
+        help="エントリー時の相場状況を選択"
+    )
+    
+    # エントリー戦略選択
+    entry_strategy = st.selectbox(
+        "🎯 エントリー戦略",
+        options=ENTRY_STRATEGIES,
+        index=0,
+        help="どのような戦略でエントリーしたかを選択"
+    )
+    
+    # 口座種別選択（横並びラジオ）
+    account_type = st.radio(
+        "口座種別",
+        options=ACCOUNT_TYPES,
+        index=ACCOUNT_TYPES.index(default_values['account_type']) if default_values['account_type'] in ACCOUNT_TYPES else 0,
+        horizontal=True
+    )
+    
+    quantity = st.number_input(
+        "株数 *", min_value=1,
+        value=default_values['quantity'], step=100
+    )
+    
+    price = st.number_input(
+        "単価 (円) *", min_value=0.0,
+        value=default_values['price'],
+        step=0.5, format="%.1f"
+    )
+    
+    # 現在時刻ボタンが押された場合は現在日時を使用
+    if st.session_state[use_current_time_key]:
+        default_date = date.today()
+        now = datetime.now()
+        default_time = dt_time(now.hour, now.minute)
+        st.session_state[use_current_time_key] = False
+    else:
+        default_date = default_values['transaction_date']
+        default_time = default_values['transaction_time']
+    
+    date_col, time_col = st.columns(2)
+    with date_col:
+        transaction_date = st.date_input("取引日 *", value=default_date)
+    with time_col:
+        transaction_time = st.time_input("取引時刻", value=default_time)
+    
+    # 現在時刻ボタン
+    if st.button("⏰ 現在時刻を入力", use_container_width=True):
+        st.session_state[use_current_time_key] = True
+        st.rerun()
+    
+    notes = st.text_area(
+        "取引の根拠・メモ",
+        value=default_values['notes'],
+        placeholder="例: 25日移動平均線ブレイクでエントリー、出来高増加を確認",
+        height=80
+    )
+    
+    # 取得額の計算表示
+    total_cost = quantity * price
+    st.metric("取得額合計", f"¥{total_cost:,.0f}")
     
     col_btn1, col_btn2 = st.columns(2)
     
@@ -206,15 +235,16 @@ def show_transaction_form(edit_id: int = None):
         # エントリー戦略をメモに含める
         final_notes = f"【戦略: {entry_strategy}】{notes}" if notes else f"【戦略: {entry_strategy}】"
         
-        # 会社名の解決
-        target_company_name = None
+        # 会社名の解決（フォーム入力値を優先）
+        target_company_name = company_name if company_name else None
         
-        # 1. 検索結果から選択されている場合（銘柄コードが一致することを確認）
-        if session_key in st.session_state and st.session_state[session_key]:
-            if st.session_state[session_key]['ticker'] == ticker:
-                target_company_name = st.session_state[session_key]['name']
+        # フォームに会社名がない場合、セッションステートから取得
+        if not target_company_name:
+            if session_key in st.session_state and st.session_state[session_key]:
+                if st.session_state[session_key]['ticker'] == ticker:
+                    target_company_name = st.session_state[session_key]['name']
         
-        # 2. まだ会社名がない場合はAPIから取得を試みる
+        # まだ会社名がない場合はAPIから取得を試みる
         if not target_company_name:
             with st.spinner("会社名を取得中..."):
                 try:
