@@ -59,6 +59,7 @@ def show_transaction_form(edit_id: int = None):
         'transaction_type': 'buy',
         'quantity': 100,
         'price': 0.0,
+        'stop_loss': None,
         'notes': '',
         'category': '上昇トレンド',
         'account_type': '現物'
@@ -75,6 +76,7 @@ def show_transaction_form(edit_id: int = None):
                 'transaction_type': existing.get('transaction_type', 'buy'),
                 'quantity': existing['quantity'],
                 'price': float(existing['price']) if existing['price'] else 0.0,
+                'stop_loss': float(existing['stop_loss']) if existing.get('stop_loss') else None,
                 'notes': existing.get('notes', ''),
                 'category': existing.get('category', 'その他'),
                 'account_type': existing.get('account_type', '現物')
@@ -181,6 +183,18 @@ def show_transaction_form(edit_id: int = None):
         step=0.5, format="%.1f"
     )
     
+    # 逆指値（ストップロス）入力
+    stop_loss = st.number_input(
+        "🛑 逆指値 (円)",
+        min_value=0.0,
+        value=default_values['stop_loss'] if default_values['stop_loss'] else 0.0,
+        step=0.5,
+        format="%.1f",
+        help="損切りラインを設定（任意）。0の場合は未設定として扱います。"
+    )
+    # 0の場合はNoneに変換
+    stop_loss = stop_loss if stop_loss > 0 else None
+    
     # 現在時刻ボタンが押された場合は現在日時を使用
     if st.session_state[use_current_time_key]:
         default_date = date.today()
@@ -267,7 +281,8 @@ def show_transaction_form(edit_id: int = None):
                     transaction_date=str(transaction_date),
                     notes=final_notes,
                     category=category,
-                    account_type=account_type
+                    account_type=account_type,
+                    stop_loss=stop_loss
                 )
                 if success:
                     st.success(f"✅ 取引ID {edit_id} を更新しました！")
@@ -282,7 +297,8 @@ def show_transaction_form(edit_id: int = None):
                     transaction_date=str(transaction_date),
                     notes=final_notes,
                     category=category,
-                    account_type=account_type
+                    account_type=account_type,
+                    stop_loss=stop_loss
                 )
                 
                 st.success(f"✅ 取引を登録しました！（ID: {new_id}）")

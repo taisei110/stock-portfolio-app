@@ -115,6 +115,7 @@ def init_db() -> None:
                     account_type VARCHAR(20) DEFAULT '現物',
                     quantity INTEGER NOT NULL CHECK(quantity > 0),
                     price NUMERIC(15, 2) NOT NULL CHECK(price > 0),
+                    stop_loss NUMERIC(15, 2),
                     transaction_date DATE NOT NULL,
                     transaction_time VARCHAR(10) DEFAULT '09:00',
                     notes TEXT,
@@ -132,6 +133,7 @@ def init_db() -> None:
                     account_type TEXT DEFAULT '現物',
                     quantity INTEGER NOT NULL CHECK(quantity > 0),
                     price REAL NOT NULL CHECK(price > 0),
+                    stop_loss REAL,
                     transaction_date TEXT NOT NULL,
                     transaction_time TEXT DEFAULT '09:00',
                     notes TEXT,
@@ -140,7 +142,30 @@ def init_db() -> None:
                 )
             """))
         conn.commit()
+    
+    # 既存テーブルにstop_lossカラムを追加（マイグレーション）
+    migrate_add_stop_loss()
 
+
+def migrate_add_stop_loss() -> None:
+    """既存のtransactionsテーブルにstop_lossカラムを追加"""
+    with engine.connect() as conn:
+        try:
+            if IS_POSTGRES:
+                conn.execute(text("""
+                    ALTER TABLE transactions ADD COLUMN IF NOT EXISTS stop_loss NUMERIC(15, 2)
+                """))
+            else:
+                # SQLiteではIF NOT EXISTSが使えないので、例外をキャッチ
+                try:
+                    conn.execute(text("""
+                        ALTER TABLE transactions ADD COLUMN stop_loss REAL
+                    """))
+                except Exception:
+                    pass  # カラムが既に存在する場合は無視
+            conn.commit()
+        except Exception:
+            pass  # エラーは無視（カラムが既に存在する場合など）
 
 def add_transaction(
     ticker: str,
@@ -152,19 +177,20 @@ def add_transaction(
     notes: Optional[str] = None,
     category: str = "その他",
     transaction_time: str = "09:00",
-    account_type: str = "現物"
+    account_type: str = "現物",
+    stop_loss: Optional[float] = None
 ) -> int:
     """取引記録を追加"""
     with engine.connect() as conn:
         if IS_POSTGRES:
             result = conn.execute(text("""
                 INSERT INTO transactions 
-                (ticker, company_name, transaction_type, account_type, quantity, price, transaction_date, transaction_time, notes, category)
-                VALUES (:ticker, :company_name, :transaction_type, :account_type, :quantity, :price, :transaction_date, :transaction_time, :notes, :category)
+                (ticker, company_name, transaction_type, account_type, quantity, price, stop_loss, transaction_date, transaction_time, notes, category)
+                VALUES (:ticker, :company_name, :transaction_type, :account_type, :quantity, :price, :stop_loss, :transaction_date, :transaction_time, :notes, :category)
                 RETURNING id
             """), {
                 "ticker": ticker, "company_name": company_name, "transaction_type": transaction_type,
-                "account_type": account_type, "quantity": quantity, "price": price,
+                "account_type": account_type, "quantity": quantity, "price": price, "stop_loss": stop_loss,
                 "transaction_date": transaction_date, "transaction_time": transaction_time,
                 "notes": notes, "category": category
             })
@@ -172,11 +198,11 @@ def add_transaction(
         else:
             result = conn.execute(text("""
                 INSERT INTO transactions 
-                (ticker, company_name, transaction_type, account_type, quantity, price, transaction_date, transaction_time, notes, category)
-                VALUES (:ticker, :company_name, :transaction_type, :account_type, :quantity, :price, :transaction_date, :transaction_time, :notes, :category)
+                (ticker, company_name, transaction_type, account_type, quantity, price, stop_loss, transaction_date, transaction_time, notes, category)
+                VALUES (:ticker, :company_name, :transaction_type, :account_type, :quantity, :price, :stop_loss, :transaction_date, :transaction_time, :notes, :category)
             """), {
                 "ticker": ticker, "company_name": company_name, "transaction_type": transaction_type,
-                "account_type": account_type, "quantity": quantity, "price": price,
+                "account_type": account_type, "quantity": quantity, "price": price, "stop_loss": stop_loss,
                 "transaction_date": transaction_date, "transaction_time": transaction_time,
                 "notes": notes, "category": category
             })
@@ -234,20 +260,21 @@ def update_transaction(
     notes: Optional[str] = None,
     category: str = "その他",
     transaction_time: str = "09:00",
-    account_type: str = "現物"
+    account_type: str = "現物",
+    stop_loss: Optional[float] = None
 ) -> bool:
     """取引記録を更新"""
     with engine.connect() as conn:
         result = conn.execute(text("""
             UPDATE transactions 
             SET ticker = :ticker, company_name = :company_name, transaction_type = :transaction_type,
-                account_type = :account_type, quantity = :quantity, price = :price,
+                account_type = :account_type, quantity = :quantity, price = :price, stop_loss = :stop_loss,
                 transaction_date = :transaction_date, transaction_time = :transaction_time,
                 notes = :notes, category = :category
             WHERE id = :id
         """), {
             "ticker": ticker, "company_name": company_name, "transaction_type": transaction_type,
-            "account_type": account_type, "quantity": quantity, "price": price,
+            "account_type": account_type, "quantity": quantity, "price": price, "stop_loss": stop_loss,
             "transaction_date": transaction_date, "transaction_time": transaction_time,
             "notes": notes, "category": category, "id": transaction_id
         })

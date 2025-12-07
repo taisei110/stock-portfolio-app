@@ -292,6 +292,18 @@ with st.sidebar:
             step=0.5, format="%.1f"
         )
         
+        # 逆指値（ストップロス）入力
+        stop_loss = st.number_input(
+            "🛑 逆指値 (円)",
+            min_value=0.0,
+            value=float(existing['stop_loss']) if existing and existing.get('stop_loss') else 0.0,
+            step=0.5,
+            format="%.1f",
+            help="損切りラインを設定（任意）。0の場合は未設定。"
+        )
+        # 0の場合はNoneに変換
+        stop_loss = stop_loss if stop_loss > 0 else None
+        
         # 現在時刻ボタンが押された場合は現在日時を使用
         if st.session_state.use_current_time:
             default_date = date.today()
@@ -363,7 +375,7 @@ with st.sidebar:
                     update_transaction(
                         st.session_state.editing_id,
                         normalized_ticker, final_company_name, transaction_type,
-                        quantity, price, str(transaction_date), final_notes, category, time_str, account_type
+                        quantity, price, str(transaction_date), final_notes, category, time_str, account_type, stop_loss
                     )
                     st.success("✅ 更新しました")
                     st.session_state.editing_id = None
@@ -372,7 +384,7 @@ with st.sidebar:
                     final_notes = f"【戦略: {entry_strategy}】{notes}" if notes else f"【戦略: {entry_strategy}】"
                     add_transaction(
                         normalized_ticker, final_company_name, transaction_type,
-                        quantity, price, str(transaction_date), final_notes, category, time_str, account_type
+                        quantity, price, str(transaction_date), final_notes, category, time_str, account_type, stop_loss
                     )
                     st.success(f"✅ {final_company_name or normalized_ticker} を登録しました")
                 st.session_state.price_cache = {}
