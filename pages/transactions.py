@@ -52,6 +52,9 @@ def show_transaction_form(edit_id: int = None):
     if use_current_time_key not in st.session_state:
         st.session_state[use_current_time_key] = False
     
+    # ウィジェットキーのサフィックス（編集時と新規作成時で異なるキーを使用）
+    key_suffix = f"_edit_{edit_id}" if edit_id else "_new"
+    
     # 編集モードの場合、既存データを取得
     default_values = {
         'ticker': '',
@@ -149,7 +152,8 @@ def show_transaction_form(edit_id: int = None):
         "取引種別 *",
         options=["buy", "sell"],
         format_func=lambda x: "🟢 買い" if x == "buy" else "🔴 売り",
-        index=0 if default_values['transaction_type'] == 'buy' else 1
+        index=0 if default_values['transaction_type'] == 'buy' else 1,
+        key=f"transaction_type{key_suffix}"
     )
     
     # テクニカル状態選択
@@ -157,7 +161,8 @@ def show_transaction_form(edit_id: int = None):
         "📊 テクニカル状態",
         options=CATEGORIES,
         index=CATEGORIES.index(default_values['category']) if default_values['category'] in CATEGORIES else 0,
-        help="エントリー時の相場状況を選択"
+        help="エントリー時の相場状況を選択",
+        key=f"category{key_suffix}"
     )
     
     # エントリー戦略選択
@@ -165,7 +170,8 @@ def show_transaction_form(edit_id: int = None):
         "🎯 エントリー戦略",
         options=ENTRY_STRATEGIES,
         index=0,
-        help="どのような戦略でエントリーしたかを選択"
+        help="どのような戦略でエントリーしたかを選択",
+        key=f"entry_strategy{key_suffix}"
     )
     
     # 口座種別選択（横並びラジオ）
@@ -173,18 +179,21 @@ def show_transaction_form(edit_id: int = None):
         "口座種別",
         options=ACCOUNT_TYPES,
         index=ACCOUNT_TYPES.index(default_values['account_type']) if default_values['account_type'] in ACCOUNT_TYPES else 0,
-        horizontal=True
+        horizontal=True,
+        key=f"account_type{key_suffix}"
     )
     
     quantity = st.number_input(
         "株数 *", min_value=1,
-        value=default_values['quantity'], step=100
+        value=default_values['quantity'], step=100,
+        key=f"quantity{key_suffix}"
     )
     
     price = st.number_input(
         "単価 (円) *", min_value=0.0,
         value=default_values['price'],
-        step=0.5, format="%.1f"
+        step=0.5, format="%.1f",
+        key=f"price{key_suffix}"
     )
     
     # 逆指値（ストップロス）入力
@@ -194,7 +203,8 @@ def show_transaction_form(edit_id: int = None):
         value=default_values['stop_loss'] if default_values['stop_loss'] else 0.0,
         step=0.5,
         format="%.1f",
-        help="損切りラインを設定（任意）。0の場合は未設定として扱います。"
+        help="損切りラインを設定（任意）。0の場合は未設定として扱います。",
+        key=f"stop_loss{key_suffix}"
     )
     # 0の場合はNoneに変換
     stop_loss = stop_loss if stop_loss > 0 else None
@@ -211,9 +221,9 @@ def show_transaction_form(edit_id: int = None):
     
     date_col, time_col = st.columns(2)
     with date_col:
-        transaction_date = st.date_input("取引日 *", value=default_date)
+        transaction_date = st.date_input("取引日 *", value=default_date, key=f"transaction_date{key_suffix}")
     with time_col:
-        transaction_time = st.time_input("取引時刻", value=default_time)
+        transaction_time = st.time_input("取引時刻", value=default_time, key=f"transaction_time{key_suffix}")
     
     # 現在時刻ボタン
     if st.button("⏰ 現在時刻を入力", use_container_width=True):
@@ -224,7 +234,8 @@ def show_transaction_form(edit_id: int = None):
         "取引の根拠・メモ",
         value=default_values['notes'],
         placeholder="例: 25日移動平均線ブレイクでエントリー、出来高増加を確認",
-        height=80
+        height=80,
+        key=f"notes{key_suffix}"
     )
     
     # チャート画像アップロード
@@ -235,7 +246,8 @@ def show_transaction_form(edit_id: int = None):
         "入力方式",
         ["📁 ファイルをアップロード", "🔗 URLを貼り付け"],
         horizontal=True,
-        label_visibility="collapsed"
+        label_visibility="collapsed",
+        key=f"image_input_method{key_suffix}"
     )
     
     # 画像をBase64にエンコード
@@ -245,7 +257,8 @@ def show_transaction_form(edit_id: int = None):
         uploaded_file = st.file_uploader(
             "TradingViewなどのスクリーンショットをアップロード",
             type=["png", "jpg", "jpeg"],
-            help="エントリー時のチャート画像を保存できます（最大5MB）"
+            help="エントリー時のチャート画像を保存できます（最大5MB）",
+            key=f"chart_file_uploader{key_suffix}"
         )
         
         if uploaded_file is not None:
@@ -263,7 +276,8 @@ def show_transaction_form(edit_id: int = None):
         image_url = st.text_input(
             "画像URL",
             placeholder="https://www.tradingview.com/x/xxxxxxxxx/ または画像の直接URL",
-            help="TradingViewのスナップショットURLまたは画像の直接URLを入力"
+            help="TradingViewのスナップショットURLまたは画像の直接URLを入力",
+            key=f"chart_image_url{key_suffix}"
         )
         
         if image_url:
