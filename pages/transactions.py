@@ -37,6 +37,13 @@ def show_transactions():
 def show_transaction_form(edit_id: int = None):
     """取引登録/編集フォームを表示"""
     
+    from stock_api import search_stocks, get_stock_info
+    
+    # セッション状態で選択された銘柄を管理
+    session_key = f'selected_stock_{edit_id}' if edit_id else 'selected_stock_new'
+    if session_key not in st.session_state:
+        st.session_state[session_key] = None
+    
     # 編集モードの場合、既存データを取得
     default_values = {
         'ticker': '',
@@ -62,6 +69,45 @@ def show_transaction_form(edit_id: int = None):
                 'category': existing.get('category', 'その他'),
                 'account_type': existing.get('account_type', '現物')
             }
+    
+    # ========== 銘柄検索セクション（フォーム外） ==========
+    st.markdown("#### 🔍 銘柄検索")
+    
+    search_col1, search_col2 = st.columns([3, 1])
+    
+    with search_col1:
+        search_query = st.text_input(
+            "銘柄名または銘柄コードで検索",
+            placeholder="例: トヨタ、ソニー、7203",
+            key=f"stock_search_{edit_id}" if edit_id else "stock_search_new",
+            help="銘柄名の一部または銘柄コードを入力すると候補が表示されます"
+        )
+    
+    # 検索結果を表示
+    if search_query and len(search_query) >= 1:
+        results = search_stocks(search_query, limit=10)
+        if results:
+            options = ["選択してください"] + [f"{r['ticker']} - {r['name']}" for r in results]
+            selected_option = st.selectbox(
+                "📋 検索結果から選択",
+                options=options,
+                key=f"search_results_{edit_id}" if edit_id else "search_results_new"
+            )
+            
+            if selected_option != "選択してください":
+                idx = options.index(selected_option) - 1
+                selected_stock = results[idx]
+                st.session_state[session_key] = selected_stock
+                st.success(f"✅ 選択: {selected_stock['ticker']} - {selected_stock['name']}")
+        else:
+            st.caption("該当する銘柄がありません。銘柄コードを直接入力してください。")
+    
+    # 選択された銘柄から値を取得
+    if st.session_state[session_key]:
+        default_values['ticker'] = st.session_state[session_key]['ticker']
+    
+    st.markdown("---")
+    
     # フォームキーを動的に生成（編集時は異なるキーを使用）
     form_key = f"transaction_form_{edit_id}" if edit_id else "transaction_form_new"
     
@@ -75,7 +121,7 @@ def show_transaction_form(edit_id: int = None):
                 "銘柄コード *",
                 value=default_values['ticker'],
                 placeholder="例: 7203.T（トヨタ）",
-                help="日本株は銘柄コードに .T を付けてください"
+                help="上の検索欄で銘柄を選択すると自動入力されます"
             )
             
             transaction_date = st.date_input(
