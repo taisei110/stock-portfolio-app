@@ -7,6 +7,7 @@ import streamlit as st
 import pandas as pd
 from datetime import date, datetime, time as dt_time
 import time
+import base64
 
 from database import (
     add_transaction, 
@@ -60,6 +61,7 @@ def show_transaction_form(edit_id: int = None):
         'quantity': 100,
         'price': 0.0,
         'stop_loss': None,
+        'chart_image': None,
         'notes': '',
         'category': '上昇トレンド',
         'account_type': '現物'
@@ -77,6 +79,7 @@ def show_transaction_form(edit_id: int = None):
                 'quantity': existing['quantity'],
                 'price': float(existing['price']) if existing['price'] else 0.0,
                 'stop_loss': float(existing['stop_loss']) if existing.get('stop_loss') else None,
+                'chart_image': existing.get('chart_image'),
                 'notes': existing.get('notes', ''),
                 'category': existing.get('category', 'その他'),
                 'account_type': existing.get('account_type', '現物')
@@ -223,6 +226,34 @@ def show_transaction_form(edit_id: int = None):
         height=80
     )
     
+    # チャート画像アップロード
+    st.markdown("##### 📊 チャート画像（任意）")
+    uploaded_file = st.file_uploader(
+        "TradingViewなどのスクリーンショットをアップロード",
+        type=["png", "jpg", "jpeg"],
+        help="エントリー時のチャート画像を保存できます（最大5MB）"
+    )
+    
+    # 画像をBase64にエンコード
+    chart_image = None
+    if uploaded_file is not None:
+        # ファイルサイズチェック（5MB制限）
+        if uploaded_file.size > 5 * 1024 * 1024:
+            st.warning("⚠️ 画像サイズが大きすぎます（最大5MB）")
+        else:
+            image_bytes = uploaded_file.read()
+            chart_image = base64.b64encode(image_bytes).decode('utf-8')
+            st.success(f"✅ 画像をアップロードしました（{len(image_bytes) / 1024:.1f} KB）")
+    elif default_values['chart_image']:
+        # 既存の画像がある場合は保持
+        chart_image = default_values['chart_image']
+        st.info("📎 既存のチャート画像があります")
+        # 既存画像のプレビュー
+        try:
+            st.image(base64.b64decode(chart_image), caption="保存済みのチャート画像", use_container_width=True)
+        except Exception:
+            pass
+    
     # 取得額の計算表示
     total_cost = quantity * price
     st.metric("取得額合計", f"¥{total_cost:,.0f}")
@@ -282,7 +313,8 @@ def show_transaction_form(edit_id: int = None):
                     notes=final_notes,
                     category=category,
                     account_type=account_type,
-                    stop_loss=stop_loss
+                    stop_loss=stop_loss,
+                    chart_image=chart_image
                 )
                 if success:
                     st.success(f"✅ 取引ID {edit_id} を更新しました！")
@@ -298,7 +330,8 @@ def show_transaction_form(edit_id: int = None):
                     notes=final_notes,
                     category=category,
                     account_type=account_type,
-                    stop_loss=stop_loss
+                    stop_loss=stop_loss,
+                    chart_image=chart_image
                 )
                 
                 st.success(f"✅ 取引を登録しました！（ID: {new_id}）")
