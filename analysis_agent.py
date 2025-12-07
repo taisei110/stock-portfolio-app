@@ -160,6 +160,18 @@ def get_vision_model(model_id: str = None):
     return genai.GenerativeModel(model_id)
 
 
+def handle_gemini_error(e: Exception, model_id: str) -> str:
+    """Gemini APIのエラーをハンドリングしてメッセージを返す"""
+    error_msg = str(e)
+    if "429" in error_msg or "ResourceExhausted" in error_msg or "Quota exceeded" in error_msg:
+        model_name = AVAILABLE_MODELS.get(model_id, {}).get('name', model_id)
+        return (f"⚠️ **{model_name} の使用制限（クォータ）を超過しました。**\n\n"
+                f"サイドバーから **「Gemini 1.5 Flash」** などの軽量モデルに切り替えるか、"
+                f"しばらく待ってから再試行してください。\n"
+                f"（エラー: 429 Quota Exceeded）")
+    return f"❌ AI分析中にエラーが発生しました: {error_msg}"
+
+
 def diagnose_chart_image(image_data, user_memo: str) -> str:
     """
     チャート画像を分析し、ユーザーのメモを採点・添削する
@@ -208,7 +220,7 @@ def diagnose_chart_image(image_data, user_memo: str) -> str:
         increment_usage(model_id)  # 使用回数をカウント
         return response.text
     except Exception as e:
-        return f"❌ 画像分析中にエラーが発生しました: {str(e)}"
+        return handle_gemini_error(e, model_id)
 
 
 def summarize_portfolio(portfolio_data: list[dict]) -> str:
@@ -278,7 +290,7 @@ def get_trade_advice(query: str, context: str = "", model_id: str = None) -> str
         increment_usage(model_id)  # 使用回数をカウント
         return response.text
     except Exception as e:
-        return f"❌ エラー: {str(e)}"
+        return handle_gemini_error(e, model_id)
 
 
 def analyze_trade_history(transactions: list[dict], portfolio: list[dict], model_id: str = None) -> str:
@@ -341,7 +353,7 @@ def analyze_trade_history(transactions: list[dict], portfolio: list[dict], model
         increment_usage(model_id)  # 使用回数をカウント
         return response.text
     except Exception as e:
-        return f"❌ AI分析中にエラーが発生しました: {str(e)}"
+        return handle_gemini_error(e, model_id)
 
 
 def check_api_status() -> tuple[bool, str]:
