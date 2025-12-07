@@ -226,7 +226,7 @@ def show_transaction_form(edit_id: int = None):
         transaction_time = st.time_input("取引時刻", value=default_time, key=f"transaction_time{key_suffix}")
     
     # 現在時刻ボタン
-    if st.button("⏰ 現在時刻を入力", use_container_width=True):
+    if st.button("⏰ 現在時刻を入力", use_container_width=True, key=f"current_time_btn{key_suffix}"):
         st.session_state[use_current_time_key] = True
         st.rerun()
     
@@ -331,7 +331,8 @@ def show_transaction_form(edit_id: int = None):
         submit = st.button(
             "💾 保存" if not edit_id else "✏️ 更新",
             type="primary",
-            use_container_width=True
+            use_container_width=True,
+            key=f"submit_btn{key_suffix}"
         )
     
     if submit:
