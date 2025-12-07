@@ -37,7 +37,7 @@ if 'selected_ticker_entry' not in st.session_state:
     st.session_state.selected_ticker_entry = None
 if 'selected_tx_context' not in st.session_state:
     st.session_state.selected_tx_context = ''
-if 'selected_model' not in st.session_state:
+if 'selected_model' not in st.session_state or st.session_state.selected_model not in AVAILABLE_MODELS:
     st.session_state.selected_model = DEFAULT_MODEL
 
 # サイドバー：モデル設定

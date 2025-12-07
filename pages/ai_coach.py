@@ -22,8 +22,8 @@ from analysis_agent import (
 def show_ai_coach():
     st.header("🤖 AIトレードコーチ")
 
-    # セッション状態の初期化（モデル選択）
-    if 'selected_model' not in st.session_state:
+    # セッション状態の初期化と検証（モデル選択）
+    if 'selected_model' not in st.session_state or st.session_state.selected_model not in AVAILABLE_MODELS:
         st.session_state.selected_model = DEFAULT_MODEL
 
     # API接続状態を確認
