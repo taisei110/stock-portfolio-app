@@ -439,6 +439,16 @@ def get_unique_tickers() -> list[str]:
         return [row[0] for row in result.fetchall()]
 
 
+def get_all_transactions() -> list[dict]:
+    """全ての取引記録を日付の降順で取得"""
+    with engine.connect() as conn:
+        result = conn.execute(text(
+            "SELECT * FROM transactions ORDER BY transaction_date DESC, id DESC"
+        ))
+        columns = result.keys()
+        return [dict(zip(columns, row)) for row in result.fetchall()]
+
+
 def get_db_info() -> dict:
     """現在のデータベース接続情報を取得（デバッグ用）"""
     return {

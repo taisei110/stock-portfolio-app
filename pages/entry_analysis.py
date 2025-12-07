@@ -9,7 +9,7 @@ from plotly.subplots import make_subplots
 from datetime import datetime, date
 import pandas as pd
 
-from database import get_portfolio_summary
+from database import get_portfolio_summary, get_all_transactions
 from stock_api import get_historical_data, normalize_ticker, get_stock_info, get_japanese_company_name
 from analysis_agent import get_api_key
 
@@ -26,17 +26,90 @@ if 'entry_points' not in st.session_state:
     st.session_state.entry_points = []
 if 'selected_ticker_entry' not in st.session_state:
     st.session_state.selected_ticker_entry = None
+if 'selected_tx_context' not in st.session_state:
+    st.session_state.selected_tx_context = ''
 
-# 銘柄選択
-st.markdown("### 📊 銘柄選択")
+# 入力モード選択
+st.markdown("### 📊 分析対象の選択")
+input_mode = st.radio(
+    "入力モード",
+    ["🖊️ 手動入力", "📝 取引履歴から選択"],
+    horizontal=True
+)
+
+selected_transaction = None
+ticker_input = "7203.T"
+
+if input_mode == "📝 取引履歴から選択":
+    transactions = get_all_transactions()
+    if not transactions:
+        st.warning("取引履歴がありません。まずは取引を登録してください。")
+        input_mode = "🖊️ 手動入力"
+    else:
+        # 表示用の選択肢を作成
+        tx_options = {
+            f"{t['transaction_date']} {t['ticker']} {t['transaction_type']} {t['quantity']}株": t 
+            for t in transactions
+        }
+        
+        selected_tx_key = st.selectbox(
+            "取引を選択",
+            options=list(tx_options.keys()),
+            format_func=lambda x: f"{x} (ID: {tx_options[x]['id']})"
+        )
+        
+        if selected_tx_key:
+            selected_transaction = tx_options[selected_tx_key]
+            ticker_input = selected_transaction['ticker']
+            
+            # 選択された取引が変更された場合、エントリーポイントをリセットして追加
+            # セッション状態で選択中の取引IDを管理
+            if 'last_selected_tx_id' not in st.session_state or st.session_state.last_selected_tx_id != selected_transaction['id']:
+                st.session_state.entry_points = []
+                st.session_state.last_selected_tx_id = selected_transaction['id']
+                
+                # 取引情報をエントリーポイントとして追加
+                st.session_state.entry_points.append({
+                    'type': selected_transaction['transaction_type'],
+                    'date': str(selected_transaction['transaction_date']),
+                    'price': float(selected_transaction['price']),
+                    'ticker': normalize_ticker(selected_transaction['ticker'])
+                })
+                
+                # 逆指値があれば追加
+                if selected_transaction.get('stop_loss') and selected_transaction['stop_loss'] > 0:
+                    st.session_state.entry_points.append({
+                        'type': 'stop_loss',
+                        'date': str(selected_transaction['transaction_date']),
+                        'price': float(selected_transaction['stop_loss']),
+                        'ticker': normalize_ticker(selected_transaction['ticker'])
+                    })
+                
+                # コンテキスト情報の保存
+                notes = selected_transaction.get('notes', '')
+                strategy = ""
+                # メモ内に戦略が含まれている場合（【戦略: ...】の解析）
+                if '【戦略:' in notes:
+                    try:
+                        strategy_part = notes.split('【')[1].split('】')[0]
+                        strategy = f"戦略: {strategy_part}\n"
+                    except:
+                        pass
+                
+                context_text = f"{strategy}メモ: {notes}"
+                st.session_state.selected_tx_context = context_text
+
 col1, col2 = st.columns([2, 1])
 
 with col1:
-    ticker_input = st.text_input(
-        "銘柄コードを入力",
-        value="7203.T",
-        placeholder="例: 7203.T（トヨタ）"
-    )
+    if input_mode == "🖊️ 手動入力":
+        ticker_input = st.text_input(
+            "銘柄コードを入力",
+            value="7203.T",
+            placeholder="例: 7203.T（トヨタ）"
+        )
+    else:
+        st.info(f"選択中: **{ticker_input}**")
 
 with col2:
     period = st.selectbox(
@@ -261,6 +334,7 @@ if ticker_input:
         if current_entries:
             analysis_context = st.text_area(
                 "トレードの根拠・背景（任意）",
+                value=st.session_state.get('selected_tx_context', ''),
                 placeholder="例: 25日移動平均線のブレイクでエントリー。直近高値を利確目標に設定。",
                 height=80
             )
