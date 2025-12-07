@@ -1,7 +1,7 @@
 """
 株価取得モジュール
 yfinance を使用して現在の株価を取得
-銘柄検索機能付き
+銘柄検索機能付き（東証全銘柄対応）
 """
 
 import yfinance as yf
@@ -9,10 +9,18 @@ from typing import Optional
 import re
 import pandas as pd
 from pathlib import Path
+from datetime import datetime, timedelta
+import requests
+import io
 
 
 # 日本株リストのキャッシュファイル
 STOCK_LIST_CACHE = Path(__file__).parent / "jp_stocks.csv"
+CACHE_MAX_AGE_DAYS = 30  # キャッシュの有効期限（日）
+
+# JPX 東証上場銘柄一覧のURL（Excelファイル）
+JPX_STOCK_LIST_URL = "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls"
+
 
 # 主要な日本株の簡易リスト（フォールバック用）
 JP_STOCKS_FALLBACK = [
@@ -49,11 +57,73 @@ JP_STOCKS_FALLBACK = [
 ]
 
 
+def download_jpx_stock_list() -> list[tuple[str, str]]:
+    """
+    JPXから東証上場銘柄一覧をダウンロード
+    
+    Returns:
+        [(ticker, name), ...] 形式のリスト
+    """
+    try:
+        # JPXからExcelファイルをダウンロード
+        response = requests.get(JPX_STOCK_LIST_URL, timeout=30)
+        response.raise_for_status()
+        
+        # Excelファイルを読み込み
+        df = pd.read_excel(io.BytesIO(response.content))
+        
+        stocks = []
+        for _, row in df.iterrows():
+            # 銘柄コードと銘柄名を取得
+            code = str(row.get('コード', row.get('銘柄コード', '')))
+            name = str(row.get('銘柄名', ''))
+            
+            if code and name and code.isdigit():
+                # 東証の銘柄コードに.Tサフィックスを追加
+                ticker = f"{code}.T"
+                stocks.append((ticker, name))
+        
+        return stocks
+    except Exception as e:
+        print(f"JPXからのダウンロードに失敗: {e}")
+        return []
+
+
+def is_cache_valid() -> bool:
+    """キャッシュが有効かどうかを確認"""
+    if not STOCK_LIST_CACHE.exists():
+        return False
+    
+    # キャッシュファイルの更新日時を確認
+    cache_mtime = datetime.fromtimestamp(STOCK_LIST_CACHE.stat().st_mtime)
+    cache_age = datetime.now() - cache_mtime
+    
+    return cache_age < timedelta(days=CACHE_MAX_AGE_DAYS)
+
+
 def get_jp_stock_list() -> list[tuple[str, str]]:
     """
     日本株リストを取得
-    キャッシュがあれば使用、なければフォールバックリストを使用
+    1. 有効なキャッシュがあれば使用
+    2. なければJPXからダウンロード試行
+    3. それでもダメならフォールバックリストを使用
     """
+    # キャッシュが有効な場合はそれを使用
+    if is_cache_valid():
+        try:
+            df = pd.read_csv(STOCK_LIST_CACHE)
+            return [(row['ticker'], row['name']) for _, row in df.iterrows()]
+        except Exception:
+            pass
+    
+    # JPXからダウンロードを試行
+    stocks = download_jpx_stock_list()
+    if stocks:
+        # キャッシュに保存
+        save_stock_list_cache(stocks)
+        return stocks
+    
+    # フォールバック: 既存のキャッシュファイルがあれば使用
     if STOCK_LIST_CACHE.exists():
         try:
             df = pd.read_csv(STOCK_LIST_CACHE)
@@ -62,6 +132,12 @@ def get_jp_stock_list() -> list[tuple[str, str]]:
             pass
     
     return JP_STOCKS_FALLBACK
+
+
+def save_stock_list_cache(stocks: list[tuple[str, str]]) -> None:
+    """銘柄リストをキャッシュに保存"""
+    df = pd.DataFrame(stocks, columns=['ticker', 'name'])
+    df.to_csv(STOCK_LIST_CACHE, index=False)
 
 
 def search_stocks(query: str, limit: int = 10) -> list[dict]:
@@ -91,11 +167,6 @@ def search_stocks(query: str, limit: int = 10) -> list[dict]:
     
     return results
 
-
-def save_stock_list_cache(stocks: list[tuple[str, str]]) -> None:
-    """銘柄リストをキャッシュに保存"""
-    df = pd.DataFrame(stocks, columns=['ticker', 'name'])
-    df.to_csv(STOCK_LIST_CACHE, index=False)
 
 
 def normalize_ticker(ticker: str) -> str:
