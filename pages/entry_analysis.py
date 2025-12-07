@@ -463,7 +463,7 @@ if ticker_input:
                             error_msg = str(e)
                             if "429" in error_msg or "ResourceExhausted" in error_msg or "Quota exceeded" in error_msg:
                                 st.error(f"⚠️ {AVAILABLE_MODELS[st.session_state.selected_model]['name']} の使用制限（クォータ）を超過しました。")
-                                st.info("💡 サイドバーから「Gemini 1.5 Flash」などの軽量モデルに切り替えるか、しばらく待ってから再試行してください。")
+                                st.info("💡 サイドバーから「Gemini 2.5 Flash」などの軽量モデルに切り替えるか、しばらく待ってから再試行してください。")
                             else:
                                 st.error(f"AI評価中にエラーが発生しました: {e}")
         else:

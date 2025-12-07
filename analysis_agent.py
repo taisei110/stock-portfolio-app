@@ -21,11 +21,11 @@ if ENV_PATH.exists():
 
 # 利用可能なモデルとその無料枠設定
 AVAILABLE_MODELS = {
-    "gemini-2.0-flash-exp": {"name": "⚡ Gemini 2.0 Flash (最新・高速)", "rpd": 1500},
-    "gemini-1.5-flash": {"name": "⚡ Gemini 1.5 Flash (安定)", "rpd": 1500},
-    "gemini-1.5-pro": {"name": "🔥 Gemini 1.5 Pro (高性能)", "rpd": 50},
+    "gemini-2.5-flash": {"name": "⚡ Gemini 2.5 Flash (最新・高速)", "rpd": 1500},
+    "gemini-2.5-pro": {"name": "✨ Gemini 2.5 Pro (最新・高性能)", "rpd": 50},
+    "gemini-2.0-flash-exp": {"name": " Gemini 2.0 Flash Exp", "rpd": 1500},
 }
-DEFAULT_MODEL = "gemini-1.5-flash"
+DEFAULT_MODEL = "gemini-2.5-flash"
 
 
 def get_pacific_date() -> str:
@@ -156,7 +156,7 @@ def get_gemini_model(model_id: str = None):
 def get_vision_model(model_id: str = None):
     """画像認識対応のGeminiモデルを取得"""
     if model_id is None:
-        model_id = "gemini-1.5-pro"
+        model_id = "gemini-2.5-pro"
     return genai.GenerativeModel(model_id)
 
 
@@ -166,7 +166,7 @@ def handle_gemini_error(e: Exception, model_id: str) -> str:
     if "429" in error_msg or "ResourceExhausted" in error_msg or "Quota exceeded" in error_msg:
         model_name = AVAILABLE_MODELS.get(model_id, {}).get('name', model_id)
         return (f"⚠️ **{model_name} の使用制限（クォータ）を超過しました。**\n\n"
-                f"サイドバーから **「Gemini 1.5 Flash」** などの軽量モデルに切り替えるか、"
+                f"サイドバーから **「Gemini 2.5 Flash」** などの軽量モデルに切り替えるか、"
                 f"しばらく待ってから再試行してください。\n"
                 f"（エラー: 429 Quota Exceeded）")
     return f"❌ AI分析中にエラーが発生しました: {error_msg}"
@@ -214,7 +214,7 @@ def diagnose_chart_image(image_data, user_memo: str) -> str:
 """
     
     try:
-        model_id = "gemini-1.5-pro"  # 画像認識には1.5-proを使用
+        model_id = "gemini-2.5-pro"  # 画像認識には2.5-proを使用
         model = get_vision_model(model_id)
         response = model.generate_content([prompt, image_data])
         increment_usage(model_id)  # 使用回数をカウント
