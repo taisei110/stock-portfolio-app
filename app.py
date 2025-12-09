@@ -526,6 +526,7 @@ else:
     portfolio_data = []
     total_valuation = 0
     total_cost = 0
+    total_pl_sum = 0
     
     for p in portfolio:
         ticker = p['ticker']
@@ -553,6 +554,7 @@ else:
                 profit_loss = (avg_price - current_price) * abs_quantity
             
             total_valuation += valuation
+            total_pl_sum += profit_loss # profit_lossは正しく計算されているので合算する
             profit_loss_pct = (profit_loss / cost * 100) if cost > 0 else 0
         else:
             valuation = 0
@@ -585,7 +587,8 @@ else:
             'profit_loss_pct': profit_loss_pct
         })
     
-    total_pl = total_valuation - total_cost if total_valuation > 0 else 0
+    # 合計損益は個別の損益の合計とする（ショートが含まれる場合、Val - Costは成立しないため）
+    total_pl = total_pl_sum
     total_pl_pct = (total_pl / total_cost * 100) if total_cost > 0 else 0
     
     # 確定損益を取得
