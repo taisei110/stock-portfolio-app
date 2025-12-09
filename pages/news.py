@@ -74,6 +74,72 @@ def fetch_kabutan_news(code: str) -> list:
     return news_items
 
 
+def get_yfinance_news(ticker: str, max_items: int = 10) -> list:
+    """
+    yfinanceからニュースを取得（要約付き）
+    """
+    try:
+        normalized = normalize_ticker(ticker)
+        stock = yf.Ticker(normalized)
+        news = stock.news
+        
+        if not news:
+            return []
+        
+        parsed_news = []
+        for item in news[:max_items]:
+            # Nested content support
+            data = item.get('content', item)
+            
+            title = data.get('title', 'No title')
+            
+            # Link extraction
+            link = ""
+            if 'clickThroughUrl' in data and data['clickThroughUrl']:
+                link = data['clickThroughUrl'].get('url', '')
+            elif 'canonicalUrl' in data and data['canonicalUrl']:
+                link = data['canonicalUrl'].get('url', '')
+            else:
+                link = data.get('link', '')
+            
+            # Publisher
+            publisher = data.get('publisher', '')
+            if not publisher and 'provider' in data:
+                publisher = data['provider'].get('displayName', '')
+                
+            # Timestamp
+            timestamp = data.get('pubDate') or data.get('providerPublishTime', 0)
+            
+            # Summary
+            summary = data.get('summary', '')
+            
+            news_item = {
+                'title': title,
+                'link': link,
+                'publisher': publisher,
+                'timestamp': timestamp,
+                'summary': summary,
+                'thumbnail': '',
+                'is_important': False
+            }
+            
+            # Thumbnail extraction
+            if 'thumbnail' in data and data['thumbnail']:
+                thumb = data['thumbnail']
+                if 'resolutions' in thumb and thumb['resolutions']:
+                    news_item['thumbnail'] = thumb['resolutions'][0].get('url', '')
+                elif 'originalUrl' in thumb:
+                    news_item['thumbnail'] = thumb.get('originalUrl', '')
+            
+            parsed_news.append(news_item)
+        
+        return parsed_news
+        
+    except Exception as e:
+        print(f"Error fetching yfinance news for {ticker}: {e}")
+        return []
+
+
 def get_jp_stock_news(ticker: str, max_items: int = 10) -> list:
     """
     日本株のニュースを取得
@@ -91,6 +157,15 @@ def get_jp_stock_news(ticker: str, max_items: int = 10) -> list:
         kabutan_news = fetch_kabutan_news(code)
         if kabutan_news:
             news_items.extend(kabutan_news)
+            
+        # yfinanceからもニュースを取得（要約付き・最新情報）
+        yf_news = get_yfinance_news(ticker, max_items)
+        if yf_news:
+            # 重複を排除しつつ追加（タイトルで簡易判定）
+            existing_titles = {item['title'] for item in news_items}
+            for item in yf_news:
+                if item['title'] not in existing_titles:
+                    news_items.append(item)
         
         # 重要なニュースがなければリンクも追加
         if len(news_items) < 3:
@@ -132,36 +207,7 @@ def get_stock_news(ticker: str, max_items: int = 10) -> list:
         return get_jp_stock_news(ticker, max_items)
     
     # 米国株などはyfinanceから取得
-    try:
-        normalized = normalize_ticker(ticker)
-        stock = yf.Ticker(normalized)
-        news = stock.news
-        
-        if not news:
-            return []
-        
-        parsed_news = []
-        for item in news[:max_items]:
-            news_item = {
-                'title': item.get('title', 'No title'),
-                'link': item.get('link', ''),
-                'publisher': item.get('publisher', ''),
-                'timestamp': item.get('providerPublishTime', 0),
-                'thumbnail': '',
-                'is_important': False
-            }
-            
-            if 'thumbnail' in item and item['thumbnail']:
-                if 'resolutions' in item['thumbnail'] and item['thumbnail']['resolutions']:
-                    news_item['thumbnail'] = item['thumbnail']['resolutions'][0].get('url', '')
-            
-            parsed_news.append(news_item)
-        
-        return parsed_news
-        
-    except Exception as e:
-        print(f"Error fetching news for {ticker}: {e}")
-        return []
+    return get_yfinance_news(ticker, max_items)
 
 
 def format_timestamp(timestamp) -> str:
@@ -171,6 +217,13 @@ def format_timestamp(timestamp) -> str:
             dt = datetime.fromtimestamp(timestamp)
             return dt.strftime("%Y-%m-%d %H:%M")
         elif isinstance(timestamp, str):
+            # ISOフォーマット対応
+            if 'T' in timestamp:
+                try:
+                    dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                    return dt.strftime("%Y-%m-%d %H:%M")
+                except:
+                    pass
             return timestamp
         return ""
     except:
@@ -265,8 +318,10 @@ def show_news():
                 title = item.get('title', 'No title')
                 link = item.get('link', '')
                 publisher = item.get('publisher', '')
-                timestamp = item.get('timestamp', '')
+                raw_timestamp = item.get('timestamp', '')
+                timestamp = format_timestamp(raw_timestamp)
                 is_important = item.get('is_important', False)
+                summary = item.get('summary', '')
                 
                 # 重要なニュースはハイライト
                 if is_important:
@@ -291,9 +346,13 @@ def show_news():
                     
                     with col2:
                         if link:
-                            st.markdown(f"[{title}]({link})")
+                            st.markdown(f"**[{title}]({link})**")
                         else:
-                            st.markdown(title)
+                            st.markdown(f"**{title}**")
+                            
+                        if summary:
+                            st.caption(summary)
+                            
                         st.caption(f"📰 {publisher} | 🕐 {timestamp}")
                 
                 st.markdown("")
