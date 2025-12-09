@@ -337,9 +337,16 @@ with st.sidebar:
             st.session_state.use_current_time = True
             st.rerun()
         
-        # 評価入力（売りの場合のみ）
+        # 評価入力（売りの場合、または買い埋めの場合）
         rating = None
-        if transaction_type == "sell":
+        is_settlement = (transaction_type == "sell")
+        
+        # 買いの場合でも、決済（買い埋め）かどうかを選択可能に
+        if transaction_type == "buy":
+            if st.checkbox("買い埋め（決済）として記録", help="空売りの買い戻しなど、手仕舞いの取引の場合はチェックしてください"):
+                is_settlement = True
+        
+        if is_settlement:
             st.markdown("##### ⭐ 自己評価")
             rating_val = st.slider("トレードの評価", 1, 5, value=existing.get('rating', 3) if existing and existing.get('rating') else 3)
             rating = rating_val
