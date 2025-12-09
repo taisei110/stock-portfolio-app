@@ -686,6 +686,7 @@ st.caption("保有銘柄の取引根拠やチャート画像を確認・編集�
 
 # ポートフォリオに含まれる銘柄リスト
 holdings_tickers = [p['ticker'] for p in portfolio_data]
+ticker_names = {p['ticker']: p['company_name'] for p in portfolio_data}
 
 if not holdings_tickers:
     st.info("保有銘柄がありません")
@@ -698,6 +699,7 @@ else:
     selected_detail_ticker = st.selectbox(
         "詳細を確認する銘柄を選択",
         options=holdings_tickers,
+        format_func=lambda x: f"{x} - {ticker_names.get(x, '')}",
         index=default_idx,
         key="detail_ticker_select"
     )
