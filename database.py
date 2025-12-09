@@ -322,57 +322,95 @@ def delete_transaction(transaction_id: int) -> bool:
 
 def get_portfolio_summary(category_filter: Optional[list[str]] = None) -> list[dict]:
     """
-    銘柄ごとのポートフォリオサマリーを取得
-    ロング（買い超過）とショート（売り超過）の両方に対応
+    ポートフォリオ（現在の保有ポジション）を取
+    時系列シミュレーションにより正確な平均取得単価（移動平均法）を算出する
     """
     with engine.connect() as conn:
-        base_query = """
-            SELECT 
-                ticker,
-                company_name,
-                category,
-                SUM(CASE WHEN transaction_type = 'buy' THEN quantity ELSE -quantity END) as total_quantity,
-                SUM(CASE WHEN transaction_type = 'buy' THEN quantity * price ELSE 0 END) as total_buy_amount,
-                SUM(CASE WHEN transaction_type = 'buy' THEN quantity ELSE 0 END) as total_buy_quantity,
-                SUM(CASE WHEN transaction_type = 'sell' THEN quantity * price ELSE 0 END) as total_sell_amount,
-                SUM(CASE WHEN transaction_type = 'sell' THEN quantity ELSE 0 END) as total_sell_quantity
-            FROM transactions
-        """
-        
-        if category_filter:
-            placeholders = ", ".join([f":cat{i}" for i in range(len(category_filter))])
-            params = {f"cat{i}": cat for i, cat in enumerate(category_filter)}
-            query = base_query + f" WHERE category IN ({placeholders}) GROUP BY ticker, company_name, category HAVING SUM(CASE WHEN transaction_type = 'buy' THEN quantity ELSE -quantity END) != 0"
-            result = conn.execute(text(query), params)
-        else:
-            query = base_query + " GROUP BY ticker, company_name, category HAVING SUM(CASE WHEN transaction_type = 'buy' THEN quantity ELSE -quantity END) != 0"
-            result = conn.execute(text(query))
-        
-        rows = result.fetchall()
+        # 全取引取得 (時系列順)
+        query = "SELECT * FROM transactions ORDER BY transaction_date ASC, transaction_time ASC, id ASC"
+        result = conn.execute(text(query))
         columns = result.keys()
+        all_transactions = [dict(zip(columns, row)) for row in result.fetchall()]
+
+    portfolio_state = {} # ticker -> {qty, avg_price, company_name, category}
+
+    for tx in all_transactions:
+        t = tx['ticker']
+        if t not in portfolio_state:
+            portfolio_state[t] = {'qty': 0, 'avg_price': 0, 'company_name': tx['company_name'], 'category': tx['category']}
         
-        portfolio = []
-        for row in rows:
-            row_dict = dict(zip(columns, row))
-            total_qty = row_dict['total_quantity']
-            
-            # ポジションタイプを判定
-            if total_qty > 0:
-                row_dict['position_type'] = 'long'
-                if row_dict['total_buy_quantity'] > 0:
-                    row_dict['avg_price'] = row_dict['total_buy_amount'] / row_dict['total_buy_quantity']
-                else:
-                    row_dict['avg_price'] = 0
+        state = portfolio_state[t]
+        current_qty = state['qty']
+        avg_price = state['avg_price']
+        
+        # メタデータの更新（最新の情報を使用）
+        if tx['company_name']: state['company_name'] = tx['company_name']
+        if tx['category']: state['category'] = tx['category']
+
+        tx_qty = float(tx['quantity'])
+        tx_price = float(tx['price'])
+        tx_type = tx['transaction_type']
+        
+        # === 損益計算ロジック（get_realized_profit_lossと共通） ===
+        if tx_type == 'buy':
+            if current_qty >= 0:
+                # 買い増し（または新規）：取得単価を更新（加重平均）
+                total_val = (current_qty * avg_price) + (tx_qty * tx_price)
+                new_qty = current_qty + tx_qty
+                state['qty'] = new_qty
+                state['avg_price'] = total_val / new_qty if new_qty != 0 else 0
             else:
-                row_dict['position_type'] = 'short'
-                if row_dict['total_sell_quantity'] > 0:
-                    row_dict['avg_price'] = row_dict['total_sell_amount'] / row_dict['total_sell_quantity']
-                else:
-                    row_dict['avg_price'] = 0
-            
-            portfolio.append(row_dict)
+                # ショートカバー（買い戻し）
+                cover_qty = min(abs(current_qty), tx_qty)
+                # 損益確定はここでは計算しないが、ポジション更新を行う
+                state['qty'] = current_qty + tx_qty
+                
+                if state['qty'] > 0: # ドテンロングになった場合
+                    # 残りの買い分が新しい取得単価になる
+                    state['avg_price'] = tx_price
         
-        return portfolio
+        elif tx_type == 'sell':
+            if current_qty > 0:
+                 # 利益確定売り（または損切り）
+                 state['qty'] = current_qty - tx_qty
+                 if state['qty'] < 0: # ドテンショートになった場合
+                     state['avg_price'] = tx_price
+            else:
+                 # 新規空売り（または売り増し）：売り単価を更新
+                 short_qty = abs(current_qty)
+                 total_val = (short_qty * avg_price) + (tx_qty * tx_price)
+                 new_short_qty = short_qty + tx_qty
+                 
+                 state['qty'] = current_qty - tx_qty # マイナス方向に増加
+                 state['avg_price'] = total_val / new_short_qty if new_short_qty != 0 else 0
+
+    # 結果リストの構築
+    summary = []
+    for ticker, state in portfolio_state.items():
+        qty = state['qty']
+        if qty == 0:
+            continue
+            
+        # カテゴリフィルタ（最新のカテゴリで判定）
+        if category_filter and state['category'] not in category_filter:
+            continue
+        
+        # app.pyが期待するキー形式に合わせる
+        summary.append({
+            'ticker': ticker,
+            'company_name': state['company_name'],
+            'category': state['category'],
+            'total_quantity': qty, 
+            'avg_price': state['avg_price'],
+            'position_type': 'long' if qty > 0 else 'short',
+            # 以下は互換性のためのダミー値（app.pyでは計算済みのavg_priceを使用するように修正済み）
+            'total_buy_amount': 0,
+            'total_buy_quantity': 0,
+            'total_sell_amount': 0,
+            'total_sell_quantity': 0
+        })
+    
+    return summary
 
 
 def get_realized_profit_loss(ticker: Optional[str] = None) -> list[dict]:
