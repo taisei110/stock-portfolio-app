@@ -337,10 +337,23 @@ with st.sidebar:
             st.session_state.use_current_time = True
             st.rerun()
         
+        # 評価入力（売りの場合のみ）
+        rating = None
+        if transaction_type == "sell":
+            st.markdown("##### ⭐ 自己評価")
+            rating_val = st.slider("トレードの評価", 1, 5, value=existing.get('rating', 3) if existing and existing.get('rating') else 3)
+            rating = rating_val
+            
+            notes_label = "反省・感想"
+            notes_placeholder = "例: 感情的なトレードになってしまった、利確が早すぎた等"
+        else:
+            notes_label = "取引の根拠・メモ"
+            notes_placeholder = "例: 25日移動平均線ブレイクでエントリー、出来高増加を確認"
+
         notes = st.text_area(
-            "取引の根拠・メモ",
+            notes_label,
             value=existing['notes'] if existing and existing['notes'] else "",
-            placeholder="例: 25日移動平均線ブレイクでエントリー、出来高増加を確認",
+            placeholder=notes_placeholder,
             height=80
         )
 
@@ -424,7 +437,7 @@ with st.sidebar:
                         st.session_state.editing_id,
                         normalized_ticker, final_company_name, transaction_type,
                         quantity, price, str(transaction_date), final_notes, category, time_str, account_type, stop_loss,
-                        final_chart_image
+                        final_chart_image, rating
                     )
                     st.success("✅ 更新しました")
                     st.session_state.editing_id = None
@@ -434,7 +447,7 @@ with st.sidebar:
                     add_transaction(
                         normalized_ticker, final_company_name, transaction_type,
                         quantity, price, str(transaction_date), final_notes, category, time_str, account_type, stop_loss,
-                        final_chart_image
+                        final_chart_image, rating
                     )
                     st.success(f"✅ {final_company_name or normalized_ticker} を登録しました")
                 st.session_state.price_cache = {}
@@ -783,12 +796,16 @@ else:
                 price_display = float(tx['price'])
                 c3.markdown(f"¥{price_display:,.0f} × {tx['quantity']}株")
                 
-                # 逆指値
+                # 逆指値または評価
                 stop_loss_val = tx.get('stop_loss')
-                if stop_loss_val and float(stop_loss_val) > 0:
+                rating_val = tx.get('rating')
+                
+                if tx['transaction_type'] == 'sell' and rating_val:
+                     c4.markdown(f"⭐ 評価: {'★' * int(rating_val)}")
+                elif stop_loss_val and float(stop_loss_val) > 0:
                     c4.markdown(f"🛡️ 逆指値: ¥{float(stop_loss_val):,.0f}")
                 else:
-                    c4.caption("逆指値なし")
+                    c4.caption("---")
                     
                 # 編集ボタン
                 if c5.button("✏️ 編集", key=f"quick_edit_{tx['id']}"):

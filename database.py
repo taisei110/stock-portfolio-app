@@ -117,6 +117,7 @@ def init_db() -> None:
                     price NUMERIC(15, 2) NOT NULL CHECK(price > 0),
                     stop_loss NUMERIC(15, 2),
                     chart_image TEXT,
+                    rating INTEGER,
                     transaction_date DATE NOT NULL,
                     transaction_time VARCHAR(10) DEFAULT '09:00',
                     notes TEXT,
@@ -136,6 +137,7 @@ def init_db() -> None:
                     price REAL NOT NULL CHECK(price > 0),
                     stop_loss REAL,
                     chart_image TEXT,
+                    rating INTEGER,
                     transaction_date TEXT NOT NULL,
                     transaction_time TEXT DEFAULT '09:00',
                     notes TEXT,
@@ -160,6 +162,9 @@ def migrate_add_columns() -> None:
                 conn.execute(text("""
                     ALTER TABLE transactions ADD COLUMN IF NOT EXISTS chart_image TEXT
                 """))
+                conn.execute(text("""
+                    ALTER TABLE transactions ADD COLUMN IF NOT EXISTS rating INTEGER
+                """))
             else:
                 # SQLiteではIF NOT EXISTSが使えないので、例外をキャッチ
                 try:
@@ -171,6 +176,12 @@ def migrate_add_columns() -> None:
                 try:
                     conn.execute(text("""
                         ALTER TABLE transactions ADD COLUMN chart_image TEXT
+                    """))
+                except Exception:
+                    pass
+                try:
+                    conn.execute(text("""
+                        ALTER TABLE transactions ADD COLUMN rating INTEGER
                     """))
                 except Exception:
                     pass
@@ -191,32 +202,33 @@ def add_transaction(
     transaction_time: str = "09:00",
     account_type: str = "現物",
     stop_loss: Optional[float] = None,
-    chart_image: Optional[str] = None
+    chart_image: Optional[str] = None,
+    rating: Optional[int] = None
 ) -> int:
     """取引記録を追加"""
     with engine.connect() as conn:
         if IS_POSTGRES:
             result = conn.execute(text("""
                 INSERT INTO transactions 
-                (ticker, company_name, transaction_type, account_type, quantity, price, stop_loss, chart_image, transaction_date, transaction_time, notes, category)
-                VALUES (:ticker, :company_name, :transaction_type, :account_type, :quantity, :price, :stop_loss, :chart_image, :transaction_date, :transaction_time, :notes, :category)
+                (ticker, company_name, transaction_type, account_type, quantity, price, stop_loss, chart_image, rating, transaction_date, transaction_time, notes, category)
+                VALUES (:ticker, :company_name, :transaction_type, :account_type, :quantity, :price, :stop_loss, :chart_image, :rating, :transaction_date, :transaction_time, :notes, :category)
                 RETURNING id
             """), {
                 "ticker": ticker, "company_name": company_name, "transaction_type": transaction_type,
                 "account_type": account_type, "quantity": quantity, "price": price, "stop_loss": stop_loss,
-                "chart_image": chart_image, "transaction_date": transaction_date, "transaction_time": transaction_time,
+                "chart_image": chart_image, "rating": rating, "transaction_date": transaction_date, "transaction_time": transaction_time,
                 "notes": notes, "category": category
             })
             transaction_id = result.fetchone()[0]
         else:
             result = conn.execute(text("""
                 INSERT INTO transactions 
-                (ticker, company_name, transaction_type, account_type, quantity, price, stop_loss, chart_image, transaction_date, transaction_time, notes, category)
-                VALUES (:ticker, :company_name, :transaction_type, :account_type, :quantity, :price, :stop_loss, :chart_image, :transaction_date, :transaction_time, :notes, :category)
+                (ticker, company_name, transaction_type, account_type, quantity, price, stop_loss, chart_image, rating, transaction_date, transaction_time, notes, category)
+                VALUES (:ticker, :company_name, :transaction_type, :account_type, :quantity, :price, :stop_loss, :chart_image, :rating, :transaction_date, :transaction_time, :notes, :category)
             """), {
                 "ticker": ticker, "company_name": company_name, "transaction_type": transaction_type,
                 "account_type": account_type, "quantity": quantity, "price": price, "stop_loss": stop_loss,
-                "chart_image": chart_image, "transaction_date": transaction_date, "transaction_time": transaction_time,
+                "chart_image": chart_image, "rating": rating, "transaction_date": transaction_date, "transaction_time": transaction_time,
                 "notes": notes, "category": category
             })
             transaction_id = result.lastrowid
@@ -275,7 +287,8 @@ def update_transaction(
     transaction_time: str = "09:00",
     account_type: str = "現物",
     stop_loss: Optional[float] = None,
-    chart_image: Optional[str] = None
+    chart_image: Optional[str] = None,
+    rating: Optional[int] = None
 ) -> bool:
     """取引記録を更新"""
     with engine.connect() as conn:
@@ -283,13 +296,13 @@ def update_transaction(
             UPDATE transactions 
             SET ticker = :ticker, company_name = :company_name, transaction_type = :transaction_type,
                 account_type = :account_type, quantity = :quantity, price = :price, stop_loss = :stop_loss,
-                chart_image = :chart_image, transaction_date = :transaction_date, transaction_time = :transaction_time,
+                chart_image = :chart_image, rating = :rating, transaction_date = :transaction_date, transaction_time = :transaction_time,
                 notes = :notes, category = :category
             WHERE id = :id
         """), {
             "ticker": ticker, "company_name": company_name, "transaction_type": transaction_type,
             "account_type": account_type, "quantity": quantity, "price": price, "stop_loss": stop_loss,
-            "chart_image": chart_image, "transaction_date": transaction_date, "transaction_time": transaction_time,
+            "chart_image": chart_image, "rating": rating, "transaction_date": transaction_date, "transaction_time": transaction_time,
             "notes": notes, "category": category, "id": transaction_id
         })
         conn.commit()
