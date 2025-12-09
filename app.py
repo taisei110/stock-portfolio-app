@@ -748,6 +748,8 @@ else:
                 # 根拠・メモの表示
                 if tx.get('notes'):
                     st.info(f"💡 **根拠・メモ**\n\n{tx['notes']}")
+                else:
+                    st.caption("💡 根拠・メモ: なし")
                 
                 # チャート画像の表示
                 if tx.get('chart_image'):
@@ -756,6 +758,8 @@ else:
                             st.image(tx['chart_image'], caption="エントリー時のチャート", use_container_width=True)
                         except Exception:
                             st.error("画像の読み込みに失敗しました（URLが無効か、画像形式が非対応です）")
+                else:
+                    st.caption("🖼️ チャート画像: 未添付")
                 
                 st.divider()
 
