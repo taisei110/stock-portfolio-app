@@ -12,6 +12,7 @@ from bs4 import BeautifulSoup
 
 from database import get_portfolio_summary
 from stock_api import normalize_ticker, get_stock_info
+from analysis_agent import translate_news_batch
 
 
 def fetch_kabutan_news(code: str) -> list:
@@ -313,6 +314,26 @@ def show_news():
             normal_news = [n for n in news_items if not n.get('is_important')]
             
             sorted_news = important_news + normal_news
+            
+            # --- 翻訳処理 ---
+            # 英語（非日本語）記事を抽出して翻訳
+            indices_to_translate = []
+            items_to_translate = []
+            
+            for i, item in enumerate(sorted_news):
+                # タイトルにひらがな・カタカナ・漢字が含まれていない場合は翻訳対象
+                if not re.search(r'[ぁ-んァ-ン一-龥]', item['title']):
+                    indices_to_translate.append(i)
+                    items_to_translate.append(item)
+            
+            if items_to_translate:
+                # 翻訳実行（スピナー表示）
+                with st.spinner(f"🌍 {len(items_to_translate)}件の英語ニュースを日本語に翻訳中... (Powered by Gemini)"):
+                    translated = translate_news_batch(items_to_translate)
+                    # 結果を元のリストに反映
+                    for idx, trans_item in zip(indices_to_translate, translated):
+                        sorted_news[idx] = trans_item
+            # ----------------
             
             for item in sorted_news:
                 title = item.get('title', 'No title')
