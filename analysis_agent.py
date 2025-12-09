@@ -643,3 +643,75 @@ def translate_news_batch(news_items: list[dict], model_id: str = None) -> list[d
     except Exception as e:
         # print(f"Translation error: {e}") # ログ出力したいがStreamlitでは標準出力見にくい
         return news_items # エラー時は原文のまま
+
+
+def analyze_market_outlook(news_items: list[dict], model_id: str = None) -> str:
+    """
+    ニュースのリストを分析し、市場展望をまとめる
+    
+    Args:
+        news_items: ニュース辞書のリスト
+        model_id: 使用するGeminiモデルID
+    
+    Returns:
+        Markdown形式の市況まとめ
+    """
+    if not init_gemini():
+        return "❌ Gemini API キーが設定されていません。"
+        
+    if model_id is None:
+        model_id = DEFAULT_MODEL
+        
+    # ニュースの要約テキストを作成
+    news_text = []
+    for item in news_items:
+        title = item.get('title', 'No title')
+        summary = item.get('summary', '')[:200]
+        # タイムスタンプの整形
+        ts = item.get('timestamp', '')
+        if isinstance(ts, int) and ts > 0:
+            ts = datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
+        
+        news_text.append(f"- {ts} {title}: {summary}")
+        
+    news_str = "\n".join(news_text[:50]) # Limit to 50 items to fit context
+    
+    # 現在時刻（JST）
+    tz_jst = timezone(timedelta(hours=9))
+    current_time = datetime.now(tz_jst).strftime("%m月%d日 %H:%M")
+    
+    prompt = f"""あなたはプロのマーケットアナリストです。現在の時刻（日本時間）は{current_time}です。
+以下の最新ニュース（要約）に基づき、投資家向けの「市況ニュースまとめ」を作成してください。
+
+ターゲット読者：日本の個人投資家
+更新タイミング：毎日8時（朝刊）と20時（夕刊）。現在の時刻に合わせて適切な挨拶や視点で書いてください。
+
+## 分析対象ニュース
+{news_str}
+
+## 出力フォーマット
+以下の構成でMarkdown形式で出力してください。
+
+# 🌍 {current_time.split(' ')[0]}（曜日）市場ニュースまとめ
+
+## 📅 おもな経済イベント・予定
+（CPI発表、日銀会合、決算など、日付と内容を箇条書きで。特に重要なものは太字で。ニュースから判明するもののみ。）
+- **12/10(水) 米11月消費者物価指数(CPI)** ...
+- ...
+
+## 📉 市場概況・トレンド
+（現在の相場の雰囲気、注目テーマ（「追加利上げ観測」など）、主要指数の動きなど）
+
+## ⚠️ 投資家が注視すべきポイント
+（リスク要因、チャンス、次のカタリストなど）
+
+※ ニュースの内容に基づき、事実と推測（観測）を区別して記述してください。
+"""
+    
+    try:
+        model = get_gemini_model(model_id)
+        response = model.generate_content(prompt)
+        increment_usage(model_id)
+        return response.text
+    except Exception as e:
+        return handle_gemini_error(e, model_id)

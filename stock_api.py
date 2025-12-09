@@ -405,3 +405,70 @@ def calculate_technical_indicators(df: "pd.DataFrame") -> "pd.DataFrame":
     df['BB_lower'] = df['BB_middle'] - (df['BB_std'] * 2)
     
     return df
+
+
+def get_yfinance_news(ticker: str, max_items: int = 10) -> list:
+    """
+    yfinanceからニュースを取得（要約付き）
+    """
+    try:
+        normalized = normalize_ticker(ticker)
+        stock = yf.Ticker(normalized)
+        news = stock.news
+        
+        if not news:
+            return []
+        
+        parsed_news = []
+        for item in news[:max_items]:
+            # Nested content support
+            data = item.get('content', item)
+            
+            title = data.get('title', 'No title')
+            
+            # Link extraction
+            link = ""
+            if 'clickThroughUrl' in data and data['clickThroughUrl']:
+                link = data['clickThroughUrl'].get('url', '')
+            elif 'canonicalUrl' in data and data['canonicalUrl']:
+                link = data['canonicalUrl'].get('url', '')
+            else:
+                link = data.get('link', '')
+            
+            # Publisher
+            publisher = data.get('publisher', '')
+            if not publisher and 'provider' in data:
+                publisher = data['provider'].get('displayName', '')
+                
+            # Timestamp
+            timestamp = data.get('pubDate') or data.get('providerPublishTime', 0)
+            
+            # Summary
+            summary = data.get('summary', '')
+            
+            news_item = {
+                'title': title,
+                'link': link,
+                'publisher': publisher,
+                'timestamp': timestamp,
+                'summary': summary,
+                'thumbnail': '',
+                'is_important': False
+            }
+            
+            # Thumbnail extraction
+            if 'thumbnail' in data and data['thumbnail']:
+                thumb = data['thumbnail']
+                if 'resolutions' in thumb and thumb['resolutions']:
+                    news_item['thumbnail'] = thumb['resolutions'][0].get('url', '')
+                elif 'originalUrl' in thumb:
+                    news_item['thumbnail'] = thumb.get('originalUrl', '')
+            
+            parsed_news.append(news_item)
+        
+        return parsed_news
+        
+    except Exception as e:
+        print(f"Error fetching yfinance news for {ticker}: {e}")
+        return []
+
