@@ -679,7 +679,86 @@ else:
 
 # 全取引履歴（折りたたみ）
 st.markdown("---")
-with st.expander("📜 全取引履歴", expanded=False):
+
+# ========== エントリー詳細・編集 ==========
+st.markdown("### 🔍 エントリー詳細・編集")
+st.caption("保有銘柄の取引根拠やチャート画像を確認・編集できます。")
+
+# ポートフォリオに含まれる銘柄リスト
+holdings_tickers = [p['ticker'] for p in portfolio_data]
+
+if not holdings_tickers:
+    st.info("保有銘柄がありません")
+else:
+    # デフォルト選択の維持
+    default_idx = 0
+    if 'selected_detail_ticker' in st.session_state and st.session_state.selected_detail_ticker in holdings_tickers:
+        default_idx = holdings_tickers.index(st.session_state.selected_detail_ticker)
+        
+    selected_detail_ticker = st.selectbox(
+        "詳細を確認する銘柄を選択",
+        options=holdings_tickers,
+        index=default_idx,
+        key="detail_ticker_select"
+    )
+    st.session_state.selected_detail_ticker = selected_detail_ticker
+    
+    # 選択された銘柄の取引を取得（新しい順）
+    all_txs = get_all_transactions()
+    target_txs = [tx for tx in all_txs if tx['ticker'] == selected_detail_ticker]
+    
+    if not target_txs:
+        st.warning("この銘柄の取引記録が見つかりません")
+    else:
+        for tx in target_txs:
+            # カード風デザインのコンテナ
+            with st.container():
+                # ヘッダー行レイアウト
+                c1, c2, c3, c4, c5 = st.columns([2, 1, 2, 2, 1])
+                
+                # 日付・時刻
+                date_str = tx['transaction_date']
+                time_str = tx.get('transaction_time', '')
+                c1.markdown(f"**{date_str}** {time_str}")
+                
+                # 取引種別
+                is_buy = tx['transaction_type'] == 'buy'
+                type_color = "green" if is_buy else "red"
+                type_label = "買い" if is_buy else "売り"
+                c2.markdown(f":{type_color}[{type_label}]")
+                
+                # 価格・数量
+                price_display = float(tx['price'])
+                c3.markdown(f"¥{price_display:,.0f} × {tx['quantity']}株")
+                
+                # 逆指値
+                stop_loss_val = tx.get('stop_loss')
+                if stop_loss_val and float(stop_loss_val) > 0:
+                    c4.markdown(f"🛡️ 逆指値: ¥{float(stop_loss_val):,.0f}")
+                else:
+                    c4.caption("逆指値なし")
+                    
+                # 編集ボタン
+                if c5.button("✏️ 編集", key=f"quick_edit_{tx['id']}"):
+                     st.session_state.editing_id = tx['id']
+                     st.rerun()
+                
+                # 根拠・メモの表示
+                if tx.get('notes'):
+                    st.info(f"💡 **根拠・メモ**\n\n{tx['notes']}")
+                
+                # チャート画像の表示
+                if tx.get('chart_image'):
+                    with st.expander("🖼️ 添付チャート画像を表示", expanded=False):
+                        try:
+                            st.image(tx['chart_image'], caption="エントリー時のチャート", use_container_width=True)
+                        except Exception:
+                            st.error("画像の読み込みに失敗しました（URLが無効か、画像形式が非対応です）")
+                
+                st.divider()
+
+st.markdown("---")
+with st.expander("📜 全取引履歴（リスト表示）", expanded=False):
     transactions = get_all_transactions(category_filter)
     
     if transactions:
