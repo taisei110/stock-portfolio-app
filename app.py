@@ -395,12 +395,25 @@ with st.sidebar:
                 st.image(final_chart_image, caption="現在登録されている画像", width=200)
                 input_image_val = final_chart_image # 維持
         
-        col1, col2 = st.columns(2)
-        with col1:
-            submit_label = "更新" if editing else "登録"
-            submitted = st.form_submit_button(submit_label, use_container_width=True, type="primary")
-        with col2:
-            cancelled = st.form_submit_button("キャンセル", use_container_width=True) if editing else False
+        if editing:
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                submitted = st.form_submit_button("更新", use_container_width=True, type="primary")
+            with col2:
+                cancelled = st.form_submit_button("キャンセル", use_container_width=True)
+            with col3:
+                deleted = st.form_submit_button("🗑️ 削除", use_container_width=True)
+        else:
+            submitted = st.form_submit_button("登録", use_container_width=True, type="primary")
+            cancelled = False
+            deleted = False
+        
+        if deleted and editing:
+            delete_transaction(st.session_state.editing_id)
+            st.success("🗑️ 取引を削除しました")
+            st.session_state.editing_id = None
+            st.session_state.selected_stock = None
+            st.rerun()
         
         if submitted:
             if not ticker or price <= 0:
