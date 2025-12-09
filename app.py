@@ -343,6 +343,37 @@ with st.sidebar:
             placeholder="例: 25日移動平均線ブレイクでエントリー、出来高増加を確認",
             height=80
         )
+
+        # チャート画像入力
+        st.markdown("##### 🖼️ チャート画像")
+        image_source = st.radio("画像の追加方法", ["URL (TradingView等)", "画像アップロード"], horizontal=True, key="img_src")
+        
+        final_chart_image = existing.get('chart_image') if existing else None
+        
+        # 既存の値がDataURIならアップロードモード、URLならURLモードをデフォルトに...したいが
+        # ラジオボタンの動作を複雑にしないため、ユーザー選択に任せる（値は保持）
+        
+        input_image_val = None
+        
+        if image_source == "URL (TradingView等)":
+            default_url = final_chart_image if final_chart_image and final_chart_image.startswith('http') else ""
+            image_url = st.text_input(
+                "画像URL",
+                value=default_url,
+                placeholder="https://www.tradingview.com/x/..."
+            )
+            input_image_val = image_url
+        else:
+            uploaded_file = st.file_uploader("スクリーンショットを選択", type=['png', 'jpg', 'jpeg', 'webp'])
+            if uploaded_file:
+                import base64
+                bytes_data = uploaded_file.getvalue()
+                b64 = base64.b64encode(bytes_data).decode()
+                mime = uploaded_file.type
+                input_image_val = f"data:{mime};base64,{b64}"
+            elif final_chart_image and final_chart_image.startswith('data:'):
+                st.image(final_chart_image, caption="現在登録されている画像", width=200)
+                input_image_val = final_chart_image # 維持
         
         col1, col2 = st.columns(2)
         with col1:
@@ -369,13 +400,31 @@ with st.sidebar:
                     except:
                         pass
                 
+                # チャート画像の処理（TradingView URL対応）
+                final_chart_image = input_image_val
+                if final_chart_image and "tradingview.com/x/" in final_chart_image:
+                    try:
+                        with st.spinner("TradingViewの画像を処理中..."):
+                            import requests
+                            from bs4 import BeautifulSoup
+                            headers = {'User-Agent': 'Mozilla/5.0'}
+                            resp = requests.get(final_chart_image, headers=headers, timeout=5)
+                            if resp.status_code == 200:
+                                soup = BeautifulSoup(resp.content, 'html.parser')
+                                og_img = soup.find('meta', property='og:image')
+                                if og_img:
+                                    final_chart_image = og_img['content']
+                    except Exception as e:
+                        st.warning(f"TradingView画像の取得に失敗しました: {e}")
+
                 if editing:
                     # エントリー戦略をメモに含める
                     final_notes = f"【戦略: {entry_strategy}】{notes}" if notes else f"【戦略: {entry_strategy}】"
                     update_transaction(
                         st.session_state.editing_id,
                         normalized_ticker, final_company_name, transaction_type,
-                        quantity, price, str(transaction_date), final_notes, category, time_str, account_type, stop_loss
+                        quantity, price, str(transaction_date), final_notes, category, time_str, account_type, stop_loss,
+                        final_chart_image
                     )
                     st.success("✅ 更新しました")
                     st.session_state.editing_id = None
@@ -384,7 +433,8 @@ with st.sidebar:
                     final_notes = f"【戦略: {entry_strategy}】{notes}" if notes else f"【戦略: {entry_strategy}】"
                     add_transaction(
                         normalized_ticker, final_company_name, transaction_type,
-                        quantity, price, str(transaction_date), final_notes, category, time_str, account_type, stop_loss
+                        quantity, price, str(transaction_date), final_notes, category, time_str, account_type, stop_loss,
+                        final_chart_image
                     )
                     st.success(f"✅ {final_company_name or normalized_ticker} を登録しました")
                 st.session_state.price_cache = {}
