@@ -364,49 +364,121 @@ def get_portfolio_summary(category_filter: Optional[list[str]] = None) -> list[d
 
 def get_realized_profit_loss(ticker: Optional[str] = None) -> list[dict]:
     """
-    確定損益を計算（売り取引から計算）
-    売り時の (売値 - 平均取得単価) × 株数
+    確定損益を計算
+    移動平均法を用いて、時系列順に取得単価を計算し、
+    決済取引（Longの売り、Shortの買い戻し）発生時の損益を算出する
     """
     with engine.connect() as conn:
-        # 各銘柄の平均取得単価を計算
-        result = conn.execute(text("""
-            SELECT 
-                ticker,
-                SUM(quantity * price) / SUM(quantity) as avg_buy_price
-            FROM transactions
-            WHERE transaction_type = 'buy'
-            GROUP BY ticker
-        """))
-        
-        avg_prices = {row[0]: row[1] for row in result.fetchall()}
-        
-        # 売り取引を取得
+        # 全取引を時系列順に取得（古い順）
+        query = "SELECT * FROM transactions"
+        params = {}
         if ticker:
-            result = conn.execute(text("""
-                SELECT * FROM transactions
-                WHERE transaction_type = 'sell' AND ticker = :ticker
-                ORDER BY transaction_date DESC
-            """), {"ticker": ticker})
-        else:
-            result = conn.execute(text("""
-                SELECT * FROM transactions
-                WHERE transaction_type = 'sell'
-                ORDER BY transaction_date DESC
-            """))
+            query += " WHERE ticker = :ticker"
+            params["ticker"] = ticker
         
-        rows = result.fetchall()
+        query += " ORDER BY transaction_date ASC, transaction_time ASC, id ASC"
+        
+        result = conn.execute(text(query), params)
         columns = result.keys()
+        all_transactions = [dict(zip(columns, row)) for row in result.fetchall()]
         
-        realized_pl = []
-        for row in rows:
-            sell_dict = dict(zip(columns, row))
-            avg_buy = avg_prices.get(sell_dict['ticker'], 0)
-            sell_dict['avg_buy_price'] = avg_buy
-            sell_dict['realized_pl'] = (sell_dict['price'] - avg_buy) * sell_dict['quantity']
-            sell_dict['realized_pl_pct'] = ((sell_dict['price'] / avg_buy) - 1) * 100 if avg_buy > 0 else 0
-            realized_pl.append(sell_dict)
+    realized_pl_list = []
+    
+    # ポートフォリオの状態 {ticker: {'qty': 0, 'avg_price': 0}}
+    portfolio_state = {}
+    
+    for tx in all_transactions:
+        t = tx['ticker']
+        if t not in portfolio_state:
+            portfolio_state[t] = {'qty': 0, 'avg_price': 0}
+            
+        state = portfolio_state[t]
+        current_qty = state['qty']
+        avg_price = state['avg_price']
         
-        return realized_pl
+        tx_qty = tx['quantity']
+        tx_price = float(tx['price'])
+        tx_type = tx['transaction_type']
+        
+        # 数値型をfloatに統一
+        if hasattr(tx_qty, 'real'): tx_qty = float(tx_qty)
+        if hasattr(current_qty, 'real'): current_qty = float(current_qty)
+        if hasattr(avg_price, 'real'): avg_price = float(avg_price)
+        
+        # 損益計算用の一時変数
+        pl = 0.0
+        pct = 0.0
+        is_closing = False
+        closing_cost = avg_price # 決済時の基準コスト
+        
+        if tx_type == 'buy':
+            if current_qty >= 0:
+                # 買い増し（または新規）：取得単価を更新（加重平均）
+                total_val = (current_qty * avg_price) + (tx_qty * tx_price)
+                new_qty = current_qty + tx_qty
+                state['qty'] = new_qty
+                state['avg_price'] = total_val / new_qty if new_qty != 0 else 0
+            else:
+                # ショートカバー（買い戻し）：損益確定
+                # 決済数量（保有ショート数と今回の買い数の小さい方）
+                cover_qty = min(abs(current_qty), tx_qty)
+                
+                if cover_qty > 0:
+                    is_closing = True
+                    # ショートの利益 = (売り単価 - 買い戻し単価) * 数量
+                    pl = (avg_price - tx_price) * cover_qty
+                    # 騰落率（下落でプラス） = (売り単価 - 買い単価) / 売り単価
+                    pct = ((avg_price - tx_price) / avg_price) * 100 if avg_price != 0 else 0
+                    closing_cost = avg_price
+                
+                # 残りのショートポジションまたはドテンロングの計算
+                remaining_buy = tx_qty - cover_qty
+                state['qty'] = current_qty + tx_qty # 単純加算 (-10 + 15 = 5)
+                
+                if state['qty'] > 0: # ドテンロングになった場合
+                    # 残りの買い分が新しい取得単価になる
+                    state['avg_price'] = tx_price
+                    
+        elif tx_type == 'sell':
+            if current_qty > 0:
+                # 利益確定売り（または損切り）：損益確定
+                sell_qty = min(current_qty, tx_qty)
+                
+                if sell_qty > 0:
+                    is_closing = True
+                    # ロングの利益 = (売り単価 - 取得単価) * 数量
+                    pl = (tx_price - avg_price) * sell_qty
+                    pct = ((tx_price / avg_price) - 1) * 100 if avg_price != 0 else 0
+                    closing_cost = avg_price
+                
+                # 残りのポジションまたはドテンショート
+                state['qty'] = current_qty - tx_qty
+                if state['qty'] < 0: # ドテンショートになった場合
+                    state['avg_price'] = tx_price
+                    
+            else:
+                # 新規空売り（または売り増し）：売り単価を更新
+                # abs(current_qty) * avg + tx_qty * price
+                short_qty = abs(current_qty)
+                total_val = (short_qty * avg_price) + (tx_qty * tx_price)
+                new_short_qty = short_qty + tx_qty
+                
+                state['qty'] = current_qty - tx_qty # マイナス方向に増加
+                state['avg_price'] = total_val / new_short_qty if new_short_qty != 0 else 0
+
+        # 決済取引のみリストに追加
+        if is_closing:
+            # 元の辞書をコピーして結果を追加
+            closed_tx = tx.copy()
+            closed_tx['realized_pl'] = pl
+            closed_tx['realized_pl_pct'] = pct
+            closed_tx['avg_buy_price'] = closing_cost # 参考用（取得単価/売り単価）
+            realized_pl_list.append(closed_tx)
+
+    # 日付の新しい順にソートして返す
+    realized_pl_list.sort(key=lambda x: (x['transaction_date'], x.get('transaction_time', '00:00')), reverse=True)
+    
+    return realized_pl_list
 
 
 def get_total_realized_profit_loss() -> float:
