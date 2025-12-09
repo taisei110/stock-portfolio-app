@@ -25,7 +25,7 @@ SQLITE_PATH = Path(__file__).parent / "portfolio.db"
 CATEGORIES = ["上昇トレンド", "下降トレンド", "レンジ相場"]
 
 # エントリー戦略
-ENTRY_STRATEGIES = ["トレンド順張り", "トレンド逆張り", "レンジ内リバウンド", "ブレイクアウト", "その他"]
+ENTRY_STRATEGIES = ["トレンド順張り", "トレンド逆張り", "レンジ内リバウンド", "ブレイクアウト", "決済", "その他"]
 
 # 口座種別
 ACCOUNT_TYPES = ["現物", "信用"]
