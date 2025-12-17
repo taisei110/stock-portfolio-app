@@ -122,6 +122,7 @@ def init_db() -> None:
                     transaction_time VARCHAR(10) DEFAULT '09:00',
                     notes TEXT,
                     category VARCHAR(50) DEFAULT 'その他',
+                    entry_checklist TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """))
@@ -142,6 +143,7 @@ def init_db() -> None:
                     transaction_time TEXT DEFAULT '09:00',
                     notes TEXT,
                     category TEXT DEFAULT 'その他',
+                    entry_checklist TEXT,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
             """))
@@ -165,6 +167,9 @@ def migrate_add_columns() -> None:
                 conn.execute(text("""
                     ALTER TABLE transactions ADD COLUMN IF NOT EXISTS rating INTEGER
                 """))
+                conn.execute(text("""
+                    ALTER TABLE transactions ADD COLUMN IF NOT EXISTS entry_checklist TEXT
+                """))
             else:
                 # SQLiteではIF NOT EXISTSが使えないので、例外をキャッチ
                 try:
@@ -182,6 +187,12 @@ def migrate_add_columns() -> None:
                 try:
                     conn.execute(text("""
                         ALTER TABLE transactions ADD COLUMN rating INTEGER
+                    """))
+                except Exception:
+                    pass
+                try:
+                    conn.execute(text("""
+                        ALTER TABLE transactions ADD COLUMN entry_checklist TEXT
                     """))
                 except Exception:
                     pass
@@ -203,33 +214,34 @@ def add_transaction(
     account_type: str = "現物",
     stop_loss: Optional[float] = None,
     chart_image: Optional[str] = None,
-    rating: Optional[int] = None
+    rating: Optional[int] = None,
+    entry_checklist: Optional[str] = None
 ) -> int:
     """取引記録を追加"""
     with engine.connect() as conn:
         if IS_POSTGRES:
             result = conn.execute(text("""
                 INSERT INTO transactions 
-                (ticker, company_name, transaction_type, account_type, quantity, price, stop_loss, chart_image, rating, transaction_date, transaction_time, notes, category)
-                VALUES (:ticker, :company_name, :transaction_type, :account_type, :quantity, :price, :stop_loss, :chart_image, :rating, :transaction_date, :transaction_time, :notes, :category)
+                (ticker, company_name, transaction_type, account_type, quantity, price, stop_loss, chart_image, rating, transaction_date, transaction_time, notes, category, entry_checklist)
+                VALUES (:ticker, :company_name, :transaction_type, :account_type, :quantity, :price, :stop_loss, :chart_image, :rating, :transaction_date, :transaction_time, :notes, :category, :entry_checklist)
                 RETURNING id
             """), {
                 "ticker": ticker, "company_name": company_name, "transaction_type": transaction_type,
                 "account_type": account_type, "quantity": quantity, "price": price, "stop_loss": stop_loss,
                 "chart_image": chart_image, "rating": rating, "transaction_date": transaction_date, "transaction_time": transaction_time,
-                "notes": notes, "category": category
+                "notes": notes, "category": category, "entry_checklist": entry_checklist
             })
             transaction_id = result.fetchone()[0]
         else:
             result = conn.execute(text("""
                 INSERT INTO transactions 
-                (ticker, company_name, transaction_type, account_type, quantity, price, stop_loss, chart_image, rating, transaction_date, transaction_time, notes, category)
-                VALUES (:ticker, :company_name, :transaction_type, :account_type, :quantity, :price, :stop_loss, :chart_image, :rating, :transaction_date, :transaction_time, :notes, :category)
+                (ticker, company_name, transaction_type, account_type, quantity, price, stop_loss, chart_image, rating, transaction_date, transaction_time, notes, category, entry_checklist)
+                VALUES (:ticker, :company_name, :transaction_type, :account_type, :quantity, :price, :stop_loss, :chart_image, :rating, :transaction_date, :transaction_time, :notes, :category, :entry_checklist)
             """), {
                 "ticker": ticker, "company_name": company_name, "transaction_type": transaction_type,
                 "account_type": account_type, "quantity": quantity, "price": price, "stop_loss": stop_loss,
                 "chart_image": chart_image, "rating": rating, "transaction_date": transaction_date, "transaction_time": transaction_time,
-                "notes": notes, "category": category
+                "notes": notes, "category": category, "entry_checklist": entry_checklist
             })
             transaction_id = result.lastrowid
         
@@ -288,7 +300,8 @@ def update_transaction(
     account_type: str = "現物",
     stop_loss: Optional[float] = None,
     chart_image: Optional[str] = None,
-    rating: Optional[int] = None
+    rating: Optional[int] = None,
+    entry_checklist: Optional[str] = None
 ) -> bool:
     """取引記録を更新"""
     with engine.connect() as conn:
@@ -297,13 +310,13 @@ def update_transaction(
             SET ticker = :ticker, company_name = :company_name, transaction_type = :transaction_type,
                 account_type = :account_type, quantity = :quantity, price = :price, stop_loss = :stop_loss,
                 chart_image = :chart_image, rating = :rating, transaction_date = :transaction_date, transaction_time = :transaction_time,
-                notes = :notes, category = :category
+                notes = :notes, category = :category, entry_checklist = :entry_checklist
             WHERE id = :id
         """), {
             "ticker": ticker, "company_name": company_name, "transaction_type": transaction_type,
             "account_type": account_type, "quantity": quantity, "price": price, "stop_loss": stop_loss,
             "chart_image": chart_image, "rating": rating, "transaction_date": transaction_date, "transaction_time": transaction_time,
-            "notes": notes, "category": category, "id": transaction_id
+            "notes": notes, "category": category, "entry_checklist": entry_checklist, "id": transaction_id
         })
         conn.commit()
         return result.rowcount > 0

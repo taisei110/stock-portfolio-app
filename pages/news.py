@@ -6,13 +6,13 @@
 import streamlit as st
 import yfinance as yf
 import requests
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import re
 from bs4 import BeautifulSoup
 
 from database import get_portfolio_summary
 from stock_api import normalize_ticker, get_stock_info, get_yfinance_news
-from analysis_agent import translate_news_batch
+from analysis_agent import translate_news_batch, summarize_news_batch
 
 
 def fetch_kabutan_news(code: str) -> list:
@@ -148,6 +148,33 @@ def get_stock_news(ticker: str, max_items: int = 10) -> list:
     return get_yfinance_news(ticker, max_items)
 
 
+def parse_timestamp_to_datetime(timestamp) -> datetime:
+    """タイムスタンプをdatetimeオブジェクトに変換（ソート用）"""
+    try:
+        if isinstance(timestamp, int) and timestamp > 0:
+            return datetime.fromtimestamp(timestamp)
+        elif isinstance(timestamp, str):
+            # ISOフォーマット対応
+            if 'T' in timestamp:
+                try:
+                    return datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                except:
+                    pass
+            # 日本語の日付フォーマット (例: "12/10 09:30" or "2024-12-10")
+            for fmt in ["%m/%d %H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%d", "%m/%d"]:
+                try:
+                    dt = datetime.strptime(timestamp, fmt)
+                    # 年がない場合は今年を補完
+                    if dt.year == 1900:
+                        dt = dt.replace(year=datetime.now().year)
+                    return dt
+                except:
+                    continue
+        return datetime.min  # パースできない場合は最も古い日付
+    except:
+        return datetime.min
+
+
 def format_timestamp(timestamp) -> str:
     """タイムスタンプを日時文字列に変換"""
     try:
@@ -228,7 +255,7 @@ def show_news():
         selected_ticker = st.selectbox(
             "銘柄を選択",
             options=tickers,
-            format_func=lambda t: f"{t} - {ticker_names.get(t, t)}"
+            format_func=lambda t: f"{t.replace('.T', '')} {ticker_names.get(t, t)}"
         )
         tickers_to_show = [selected_ticker]
     else:
@@ -240,17 +267,22 @@ def show_news():
     for ticker in tickers_to_show:
         company_name = ticker_names.get(ticker, ticker)
         
-        st.subheader(f"📊 {ticker} - {company_name}")
+        st.subheader(f"📊 {ticker.replace('.T', '')} {company_name}")
         
         with st.spinner(f"{ticker} のニュースを取得中..."):
             news_items = get_stock_news(ticker, max_items=10)
         
         if news_items:
-            # 重要なニュースを先に表示
-            important_news = [n for n in news_items if n.get('is_important')]
-            normal_news = [n for n in news_items if not n.get('is_important')]
+            # ニュースを日付順（新しい順）にソート
+            def get_sort_key(item):
+                ts = item.get('timestamp', '')
+                dt = parse_timestamp_to_datetime(ts)
+                # 重要なニュースは優先度を上げる（+1000日）
+                if item.get('is_important'):
+                    return dt + timedelta(days=1000)
+                return dt
             
-            sorted_news = important_news + normal_news
+            sorted_news = sorted(news_items, key=get_sort_key, reverse=True)
             
             # --- 翻訳処理 ---
             # 英語（非日本語）記事を抽出して翻訳
@@ -272,6 +304,27 @@ def show_news():
                         sorted_news[idx] = trans_item
             # ----------------
             
+            # --- 要約生成処理 ---
+            # 要約がないニュースを抽出してAI要約を生成
+            indices_to_summarize = []
+            items_to_summarize = []
+            
+            for i, item in enumerate(sorted_news):
+                # 要約が空または短い場合は生成対象
+                summary = item.get('summary', '')
+                if not summary or len(summary) < 10:
+                    indices_to_summarize.append(i)
+                    items_to_summarize.append(item)
+            
+            if items_to_summarize:
+                # 要約生成実行（スピナー表示）
+                with st.spinner(f"📝 {len(items_to_summarize)}件のニュースの要約を生成中... (Powered by Gemini)"):
+                    summarized = summarize_news_batch(items_to_summarize)
+                    # 結果を元のリストに反映
+                    for idx, summ_item in zip(indices_to_summarize, summarized):
+                        sorted_news[idx] = summ_item
+            # --------------------
+            
             for item in sorted_news:
                 title = item.get('title', 'No title')
                 link = item.get('link', '')
@@ -283,9 +336,10 @@ def show_news():
                 
                 # 重要なニュースはハイライト
                 if is_important:
+                    summary_html = f"<br><span style='color: #ccc; font-size: 0.9em;'>{summary}</span>" if summary else ""
                     st.markdown(f"""
                     <div style="background-color: rgba(255, 165, 0, 0.1); padding: 10px; border-radius: 5px; border-left: 3px solid orange; margin: 5px 0;">
-                        <strong><a href="{link}" target="_blank" style="color: #f0f0f0;">{title}</a></strong><br>
+                        <strong><a href="{link}" target="_blank" style="color: #f0f0f0;">{title}</a></strong>{summary_html}<br>
                         <small style="color: #888;">📰 {publisher} | 🕐 {timestamp}</small>
                     </div>
                     """, unsafe_allow_html=True)

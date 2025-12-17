@@ -51,25 +51,26 @@ def show_dashboard():
     portfolio['daily_change'] = 0  # 簡易化のため0
     portfolio['daily_change_pct'] = 0
     
-    # 会社名の修正（Noneまたは不正な場合はAPIから取得）
+    # 会社名の修正（Noneまたは不正な場合はAPIから取得）+ 銘柄コード付きの表示名を作成
     def get_display_name(row):
         name = row.get('company_name')
         ticker = row.get('ticker', '')
+        ticker_code = ticker.replace('.T', '')
         
         # 既に有効な日本語名がある場合はそのまま使用
         if name and str(name) != 'None' and not str(name).replace('.', '').isdigit():
-            return name
+            return f"{ticker_code} {name}"
         
         # APIから日本語会社名を取得
         try:
             from stock_api import get_stock_info
             info = get_stock_info(ticker)
             if info and info.get('name'):
-                return info['name']
+                return f"{ticker_code} {info['name']}"
         except:
             pass
         
-        return ticker
+        return ticker_code
     
     portfolio['name'] = portfolio.apply(get_display_name, axis=1)
     

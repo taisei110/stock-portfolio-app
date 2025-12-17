@@ -212,12 +212,28 @@ def show_performance():
     by_ticker['win_rate'] = (by_ticker['wins'] / by_ticker['total'] * 100).round(1)
     by_ticker = by_ticker.sort_values('total_pl', ascending=True)
     
+    # 銘柄コード + 会社名の表示名を作成
+    from stock_api import get_stock_info
+    
+    def get_display_name(ticker: str) -> str:
+        """銘柄コード + 会社名の表示名を取得"""
+        ticker_code = ticker.replace('.T', '')
+        try:
+            info = get_stock_info(ticker)
+            if info and info.get('name'):
+                return f"{ticker_code} {info['name']}"
+        except:
+            pass
+        return ticker_code
+    
+    by_ticker['display_name'] = by_ticker['ticker'].apply(get_display_name)
+    
     # 銘柄別損益棒グラフ
     colors_ticker = ['#22c55e' if pl >= 0 else '#ef4444' for pl in by_ticker['total_pl']]
     
     fig_ticker = go.Figure()
     fig_ticker.add_trace(go.Bar(
-        y=by_ticker['ticker'],
+        y=by_ticker['display_name'],
         x=by_ticker['total_pl'],
         orientation='h',
         marker_color=colors_ticker,

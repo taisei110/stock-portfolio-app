@@ -9,6 +9,7 @@ from datetime import date, datetime, time as dt_time
 import time
 import base64
 import requests
+import json
 
 from database import (
     add_transaction, 
@@ -21,6 +22,20 @@ from database import (
     ACCOUNT_TYPES
 )
 from stock_api import get_stock_info
+
+# チェックリスト用定数
+MARKETS = ["プライム", "スタンダード", "グロース"]
+ENTRY_TIMES = ["前場", "後場", "引け付近"]
+HIGHER_TIMEFRAMES = ["日足", "4H"]
+EXECUTION_TIMEFRAMES = ["15分", "5分"]
+TREND_DIRECTIONS = ["上昇", "下降", "レンジ"]
+PHASES = ["初動", "中盤", "終盤", "不明"]
+RR_CATEGORIES = ["～1:2", "1:2～1:3", "1:3～1:5", "1:5以上", "1:10以上"]
+LOT_TYPES = ["通常（1.0%）", "試験（1.5%）", "攻め（2.0%）"]
+DENIAL_CONDITIONS = ["構造ゾーン割れ", "上位足トレンド否定", "想定外のギャップ"]
+DENIAL_ACTIONS = ["即損切り", "ルール通り放置", "観察のみ"]
+ANXIETY_LEVELS = ["なし", "少し", "強い"]
+FINAL_DECISIONS = ["実行してよい", "観察のみ", "見送り"]
 
 
 def show_transactions():
@@ -35,6 +50,362 @@ def show_transactions():
     
     with tab2:
         show_transactions_list()
+
+
+def render_entry_checklist(key_suffix: str = "", existing_checklist: dict = None) -> dict:
+    """
+    エントリーチェックリストUIを描画し、入力データを返す
+    8つのセクションで構成される包括的なチェックリスト
+    """
+    if existing_checklist is None:
+        existing_checklist = {}
+    
+    checklist_data = {}
+    
+    st.markdown("---")
+    st.subheader("📋 エントリーチェックリスト")
+    st.caption("エントリー前に以下のチェック項目を確認してください")
+    
+    # ① 基本情報
+    with st.expander("① 基本情報【選択式】", expanded=True):
+        basic = existing_checklist.get("basic", {})
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            market = st.selectbox(
+                "市場",
+                options=["未選択"] + MARKETS,
+                index=MARKETS.index(basic.get("market", "")) + 1 if basic.get("market") in MARKETS else 0,
+                key=f"market{key_suffix}"
+            )
+            entry_time = st.selectbox(
+                "想定エントリー時間帯",
+                options=["未選択"] + ENTRY_TIMES,
+                index=ENTRY_TIMES.index(basic.get("entry_time", "")) + 1 if basic.get("entry_time") in ENTRY_TIMES else 0,
+                key=f"entry_time{key_suffix}"
+            )
+        with col2:
+            higher_tf = st.selectbox(
+                "上位足",
+                options=["未選択"] + HIGHER_TIMEFRAMES,
+                index=HIGHER_TIMEFRAMES.index(basic.get("higher_timeframe", "")) + 1 if basic.get("higher_timeframe") in HIGHER_TIMEFRAMES else 0,
+                key=f"higher_tf{key_suffix}"
+            )
+            exec_tf = st.selectbox(
+                "実行足",
+                options=["未選択"] + EXECUTION_TIMEFRAMES,
+                index=EXECUTION_TIMEFRAMES.index(basic.get("execution_timeframe", "")) + 1 if basic.get("execution_timeframe") in EXECUTION_TIMEFRAMES else 0,
+                key=f"exec_tf{key_suffix}"
+            )
+        
+        checklist_data["basic"] = {
+            "market": market if market != "未選択" else None,
+            "entry_time": entry_time if entry_time != "未選択" else None,
+            "higher_timeframe": higher_tf if higher_tf != "未選択" else None,
+            "execution_timeframe": exec_tf if exec_tf != "未選択" else None
+        }
+    
+    # ② 上位足環境認識（MTF）
+    with st.expander("② 上位足環境認識（MTF）【チェック式】", expanded=True):
+        mtf = existing_checklist.get("mtf_analysis", {})
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            trend_dir = st.selectbox(
+                "上位足トレンド方向",
+                options=["未選択"] + TREND_DIRECTIONS,
+                index=TREND_DIRECTIONS.index(mtf.get("trend_direction", "")) + 1 if mtf.get("trend_direction") in TREND_DIRECTIONS else 0,
+                key=f"trend_dir{key_suffix}"
+            )
+            phase = st.selectbox(
+                "現在の局面",
+                options=["未選択"] + PHASES,
+                index=PHASES.index(mtf.get("phase", "")) + 1 if mtf.get("phase") in PHASES else 0,
+                key=f"phase{key_suffix}"
+            )
+        with col2:
+            is_with_trend = st.radio(
+                "上位足順張りか",
+                options=["Yes（逆張り要素なし）", "No"],
+                index=0 if mtf.get("is_with_trend", True) else 1,
+                key=f"is_with_trend{key_suffix}"
+            )
+        
+        # 逆張りの場合は警告
+        if is_with_trend == "No":
+            st.error("⚠️ 上位足逆張りの場合、このエントリーは見送りを推奨します")
+        
+        checklist_data["mtf_analysis"] = {
+            "trend_direction": trend_dir if trend_dir != "未選択" else None,
+            "phase": phase if phase != "未選択" else None,
+            "is_with_trend": is_with_trend == "Yes（逆張り要素なし）"
+        }
+    
+    # ③ 構造的優位チェック
+    with st.expander("③ 構造的優位チェック【核心・チェック式】", expanded=True):
+        structure = existing_checklist.get("structure_check", {})
+        
+        st.caption("該当するものにチェック ✔")
+        
+        trend_cont = st.checkbox(
+            "上位足トレンド継続構造（高安更新・MA傾斜など）",
+            value=structure.get("trend_continuation", False),
+            key=f"trend_cont{key_suffix}"
+        )
+        support_resist = st.checkbox(
+            "明確な支持帯／抵抗帯（ロルリバ含む）",
+            value=structure.get("support_resistance", False),
+            key=f"support_resist{key_suffix}"
+        )
+        channel_contact = st.checkbox(
+            "チャネル／トレンドライン接触",
+            value=structure.get("channel_contact", False),
+            key=f"channel_contact{key_suffix}"
+        )
+        similar_pattern = st.checkbox(
+            "複数回出現している同型値動き",
+            value=structure.get("similar_pattern", False),
+            key=f"similar_pattern{key_suffix}"
+        )
+        reversal_signal = st.checkbox(
+            "下位足での調整完了＋反転シグナル",
+            value=structure.get("reversal_signal", False),
+            key=f"reversal_signal{key_suffix}"
+        )
+        
+        structure_count = sum([trend_cont, support_resist, channel_contact, similar_pattern, reversal_signal])
+        st.metric("👉 構造カウント数", f"{structure_count}個")
+        
+        checklist_data["structure_check"] = {
+            "trend_continuation": trend_cont,
+            "support_resistance": support_resist,
+            "channel_contact": channel_contact,
+            "similar_pattern": similar_pattern,
+            "reversal_signal": reversal_signal,
+            "count": structure_count
+        }
+    
+    # ④ RR判定
+    with st.expander("④ RR判定【数値のみ】", expanded=True):
+        rr = existing_checklist.get("rr_assessment", {})
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            entry_price = st.number_input(
+                "想定エントリー価格",
+                min_value=0.0,
+                value=float(rr.get("entry_price", 0.0)),
+                step=1.0,
+                key=f"rr_entry{key_suffix}"
+            )
+        with col2:
+            sl_price = st.number_input(
+                "損切り価格",
+                min_value=0.0,
+                value=float(rr.get("stop_loss_price", 0.0)),
+                step=1.0,
+                key=f"rr_sl{key_suffix}"
+            )
+        with col3:
+            tp_price = st.number_input(
+                "利確目標価格",
+                min_value=0.0,
+                value=float(rr.get("take_profit_price", 0.0)),
+                step=1.0,
+                key=f"rr_tp{key_suffix}"
+            )
+        
+        # RR比率を自動計算
+        rr_ratio = 0.0
+        rr_category = "未計算"
+        if entry_price > 0 and sl_price > 0 and tp_price > 0:
+            risk = abs(entry_price - sl_price)
+            reward = abs(tp_price - entry_price)
+            if risk > 0:
+                rr_ratio = reward / risk
+                if rr_ratio >= 10:
+                    rr_category = "1:10以上"
+                elif rr_ratio >= 5:
+                    rr_category = "1:5以上"
+                elif rr_ratio >= 3:
+                    rr_category = "1:3～1:5"
+                elif rr_ratio >= 2:
+                    rr_category = "1:2～1:3"
+                else:
+                    rr_category = "～1:2"
+        
+        st.metric("👉 想定RR", f"1:{rr_ratio:.1f}" if rr_ratio > 0 else "未計算", delta=rr_category if rr_category != "未計算" else None)
+        
+        checklist_data["rr_assessment"] = {
+            "entry_price": entry_price,
+            "stop_loss_price": sl_price,
+            "take_profit_price": tp_price,
+            "rr_ratio": rr_ratio,
+            "rr_category": rr_category
+        }
+    
+    # ⑤ ロット自動判定
+    with st.expander("⑤ ロット自動判定【選択＋自動ロジック】", expanded=True):
+        lot = existing_checklist.get("lot_determination", {})
+        structure_count = checklist_data["structure_check"]["count"]
+        rr_ratio = checklist_data["rr_assessment"]["rr_ratio"]
+        
+        st.markdown("##### 通常ロット")
+        normal_lot_ok = st.checkbox(
+            "ルール適合 → Yes",
+            value=lot.get("normal_lot_ok", True),
+            key=f"normal_lot{key_suffix}"
+        )
+        
+        st.markdown("##### 試験ロット判定")
+        trial_crit1 = structure_count >= 2 and rr_ratio >= 3
+        trial_crit2 = structure_count >= 3 and rr_ratio >= 2
+        trial_met = trial_crit1 or trial_crit2
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.checkbox("構造 ≥2 ＆ RR ≥1:3", value=trial_crit1, disabled=True, key=f"trial1{key_suffix}")
+            st.checkbox("構造 ≥3 ＆ RR ≥1:2", value=trial_crit2, disabled=True, key=f"trial2{key_suffix}")
+        with col2:
+            st.info(f"→ {'✅ 該当あり' if trial_met else '❌ 該当なし'}")
+        
+        st.markdown("##### 攻めロット判定")
+        aggr_crit1 = structure_count >= 3 and rr_ratio >= 5
+        aggr_crit2 = st.checkbox(
+            "A（市場・セクター）or C（事前検証）あり",
+            value=lot.get("market_sector_verified", False),
+            key=f"aggr_ac{key_suffix}"
+        )
+        aggr_crit3 = rr_ratio >= 10
+        aggr_met = (aggr_crit1 and aggr_crit2) or aggr_crit3
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.checkbox("構造 ≥3 ＆ RR ≥1:5", value=aggr_crit1, disabled=True, key=f"aggr1{key_suffix}")
+            st.checkbox("RR ≥1:10（例外適用）", value=aggr_crit3, disabled=True, key=f"aggr3{key_suffix}")
+        with col2:
+            st.info(f"→ {'✅ 該当あり' if aggr_met else '❌ 該当なし'}")
+        
+        # 最終ロット判定
+        if aggr_met:
+            final_lot = "攻め（2.0%）"
+        elif trial_met:
+            final_lot = "試験（1.5%）"
+        else:
+            final_lot = "通常（1.0%）"
+        
+        st.success(f"👉 最終ロット: **{final_lot}**")
+        
+        checklist_data["lot_determination"] = {
+            "normal_lot_ok": normal_lot_ok,
+            "trial_criteria_met": trial_met,
+            "aggressive_criteria_met": aggr_met,
+            "market_sector_verified": aggr_crit2,
+            "final_lot": final_lot
+        }
+    
+    # ⑥ 否定シナリオ
+    with st.expander("⑥ 否定シナリオ【最低限・選択式】", expanded=True):
+        denial = existing_checklist.get("denial_scenario", {})
+        
+        st.markdown("##### 否定される条件（該当するもの）")
+        denial_conds = []
+        for cond in DENIAL_CONDITIONS:
+            if st.checkbox(cond, value=cond in denial.get("denial_conditions", []), key=f"denial_{cond}{key_suffix}"):
+                denial_conds.append(cond)
+        
+        other_cond = st.text_input(
+            "その他（1行のみ）",
+            value=denial.get("other_condition", ""),
+            max_chars=100,
+            key=f"denial_other{key_suffix}"
+        )
+        
+        st.markdown("##### 否定時の行動")
+        denial_action = st.selectbox(
+            "行動",
+            options=DENIAL_ACTIONS,
+            index=DENIAL_ACTIONS.index(denial.get("action_on_denial", "即損切り")) if denial.get("action_on_denial") in DENIAL_ACTIONS else 0,
+            key=f"denial_action{key_suffix}"
+        )
+        
+        checklist_data["denial_scenario"] = {
+            "denial_conditions": denial_conds,
+            "other_condition": other_cond,
+            "action_on_denial": denial_action
+        }
+    
+    # ⑦ 感情・行動チェック
+    with st.expander("⑦ 感情・行動チェック【チェック式】", expanded=True):
+        emotion = existing_checklist.get("emotion_check", {})
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            anxiety = st.selectbox(
+                "焦り",
+                options=ANXIETY_LEVELS,
+                index=ANXIETY_LEVELS.index(emotion.get("anxiety_level", "なし")) if emotion.get("anxiety_level") in ANXIETY_LEVELS else 0,
+                key=f"anxiety{key_suffix}"
+            )
+            revenge = st.radio(
+                "取り返したい感情",
+                options=["なし", "あり"],
+                index=1 if emotion.get("revenge_trading", False) else 0,
+                horizontal=True,
+                key=f"revenge{key_suffix}"
+            )
+        with col2:
+            ok_to_skip = st.radio(
+                "見送っても後悔しない",
+                options=["Yes", "No"],
+                index=0 if emotion.get("ok_to_skip", True) else 1,
+                horizontal=True,
+                key=f"ok_skip{key_suffix}"
+            )
+            loss_rule_ok = st.radio(
+                "連敗・停止ルール抵触していない",
+                options=["Yes", "No"],
+                index=0 if emotion.get("consecutive_loss_rule_ok", True) else 1,
+                horizontal=True,
+                key=f"loss_rule{key_suffix}"
+            )
+        
+        # 警告表示
+        if anxiety == "強い":
+            st.warning("⚠️ 焦りが強い状態でのトレードは注意")
+        if revenge == "あり":
+            st.warning("⚠️ 取り返したい感情がある状態は危険です")
+        if loss_rule_ok == "No":
+            st.error("🚫 連敗・停止ルールに抵触している場合はトレードを控えてください")
+        
+        checklist_data["emotion_check"] = {
+            "anxiety_level": anxiety,
+            "revenge_trading": revenge == "あり",
+            "ok_to_skip": ok_to_skip == "Yes",
+            "consecutive_loss_rule_ok": loss_rule_ok == "Yes"
+        }
+    
+    # ⑧ 実行判断
+    with st.expander("⑧ 実行判断【最終】", expanded=True):
+        final = existing_checklist.get("final_decision", "実行してよい")
+        
+        final_decision = st.radio(
+            "このトレードは",
+            options=FINAL_DECISIONS,
+            index=FINAL_DECISIONS.index(final) if final in FINAL_DECISIONS else 0,
+            key=f"final_decision{key_suffix}"
+        )
+        
+        if final_decision == "実行してよい":
+            st.success("✅ エントリー条件を満たしています")
+        elif final_decision == "観察のみ":
+            st.info("👀 観察モードで経過を見守りましょう")
+        else:
+            st.warning("🛑 この機会は見送りましょう")
+        
+        checklist_data["final_decision"] = final_decision
+    
+    return checklist_data
 
 
 def show_transaction_form(edit_id: int = None):
@@ -86,7 +457,8 @@ def show_transaction_form(edit_id: int = None):
                 'chart_image': existing.get('chart_image'),
                 'notes': existing.get('notes', ''),
                 'category': existing.get('category', 'その他'),
-                'account_type': existing.get('account_type', '現物')
+                'account_type': existing.get('account_type', '現物'),
+                'entry_checklist': json.loads(existing['entry_checklist']) if existing.get('entry_checklist') else None
             }
     
     # ========== 銘柄検索セクション（フォーム外） ==========
@@ -345,6 +717,10 @@ def show_transaction_form(edit_id: int = None):
     total_cost = quantity * price
     st.metric("取得額合計", f"¥{total_cost:,.0f}")
     
+    # エントリーチェックリストを表示
+    existing_checklist = default_values.get('entry_checklist') if 'entry_checklist' in default_values else None
+    checklist_data = render_entry_checklist(key_suffix, existing_checklist)
+    
     col_btn1, col_btn2 = st.columns(2)
     
     with col_btn1:
@@ -389,6 +765,9 @@ def show_transaction_form(edit_id: int = None):
         
         # 取引を保存
         try:
+            # チェックリストをJSON文字列に変換
+            entry_checklist_json = json.dumps(checklist_data, ensure_ascii=False) if checklist_data else None
+            
             if edit_id:
                 success = update_transaction(
                     transaction_id=edit_id,
@@ -402,7 +781,8 @@ def show_transaction_form(edit_id: int = None):
                     category=category,
                     account_type=account_type,
                     stop_loss=stop_loss,
-                    chart_image=chart_image
+                    chart_image=chart_image,
+                    entry_checklist=entry_checklist_json
                 )
                 if success:
                     st.success(f"✅ 取引ID {edit_id} を更新しました！")
@@ -419,7 +799,8 @@ def show_transaction_form(edit_id: int = None):
                     category=category,
                     account_type=account_type,
                     stop_loss=stop_loss,
-                    chart_image=chart_image
+                    chart_image=chart_image,
+                    entry_checklist=entry_checklist_json
                 )
                 
                 st.success(f"✅ 取引を登録しました！（ID: {new_id}）")
@@ -486,14 +867,42 @@ def show_transactions_list():
             
             with col1:
                 tx_type = "🟢 買い" if row.get('transaction_type') == 'buy' else "🔴 売り"
-                st.markdown(f"**{row['ticker']}** {tx_type}")
+                ticker_code = str(row['ticker']).replace('.T', '')
+                company_name_display = row.get('company_name', '') or ''
+                display_name = f"{ticker_code} {company_name_display}" if company_name_display else ticker_code
+                st.markdown(f"**{display_name}** {tx_type}")
                 st.caption(f"ID: {row['id']}")
             
             with col2:
                 st.markdown(f"📅 {row['transaction_date']}")
+                # チェックリストの判断を表示
+                if row.get('entry_checklist'):
+                    try:
+                        checklist = json.loads(row['entry_checklist']) if isinstance(row['entry_checklist'], str) else row['entry_checklist']
+                        final = checklist.get('final_decision', '')
+                        if final == "実行してよい":
+                            st.caption("✅ 実行")
+                        elif final == "観察のみ":
+                            st.caption("👀 観察")
+                        elif final == "見送り":
+                            st.caption("🛑 見送")
+                    except:
+                        pass
             
             with col3:
                 st.markdown(f"📈 {row['quantity']:,}株")
+                # チェックリストの構造・RRを表示
+                if row.get('entry_checklist'):
+                    try:
+                        checklist = json.loads(row['entry_checklist']) if isinstance(row['entry_checklist'], str) else row['entry_checklist']
+                        structure = checklist.get('structure_check', {})
+                        rr = checklist.get('rr_assessment', {})
+                        count = structure.get('count', 0)
+                        rr_cat = rr.get('rr_category', '')
+                        if count > 0 or rr_cat:
+                            st.caption(f"構造{count} {rr_cat}")
+                    except:
+                        pass
             
             with col4:
                 total = row['quantity'] * row['price']

@@ -636,11 +636,16 @@ else:
         
         pie_data = [p for p in portfolio_data if p['valuation'] > 0]
         
+        # 銘柄コード + 会社名の表示名を作成
+        for p in pie_data:
+            ticker_code = p['ticker'].replace('.T', '')
+            p['display_name'] = f"{ticker_code} {p['company_name']}"
+        
         if pie_data:
             fig_pie = px.pie(
                 pie_data,
                 values='valuation',
-                names='ticker',
+                names='display_name',
                 hole=0.4,
                 color_discrete_sequence=px.colors.qualitative.Set2
             )
@@ -724,8 +729,13 @@ else:
                 # 期間ラベル
                 period_labels = {"1mo": "1ヶ月", "3mo": "3ヶ月", "6mo": "6ヶ月", "1y": "1年", "2y": "2年", "5y": "5年"}
                 
+                # 選択された銘柄の会社名を取得
+                selected_company = next((p['company_name'] for p in portfolio_data if p['ticker'] == selected_ticker), selected_ticker)
+                ticker_code = selected_ticker.replace('.T', '')
+                chart_title = f"{ticker_code} {selected_company} - 過去{period_labels.get(selected_period, '1年')}"
+                
                 fig_candle.update_layout(
-                    title=f"{selected_ticker} - 過去{period_labels.get(selected_period, '1年')}",
+                    title=chart_title,
                     xaxis_title="日付",
                     yaxis_title="株価 (円)",
                     xaxis_rangeslider_visible=False,
@@ -785,7 +795,7 @@ else:
     selected_detail_ticker = st.selectbox(
         "詳細を確認する銘柄を選択",
         options=holdings_tickers,
-        format_func=lambda x: f"{x} - {ticker_names.get(x, '')}",
+        format_func=lambda x: f"{x.replace('.T', '')} {ticker_names.get(x, '')}",
         index=default_idx,
         key="detail_ticker_select"
     )
