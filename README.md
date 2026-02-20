@@ -1,37 +1,45 @@
-# 📈 Stock Portfolio Manager
+# 📈 Stock Portfolio & Analysis App
 
-[![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
-[![Streamlit](https://img.shields.io/badge/Streamlit-1.28+-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://streamlit.io)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Supabase-336791?style=for-the-badge&logo=postgresql&logoColor=white)](https://supabase.com)
-[![Plotly](https://img.shields.io/badge/Plotly-5.18+-3F4F75?style=for-the-badge&logo=plotly&logoColor=white)](https://plotly.com)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
+日本株式対応のポートフォリオ管理アプリ。リアルタイムの株価取得、AI診断機能、独自のテクニカル分析判断ツールを搭載しています。
 
-🔗 **[Live Demo](https://stock-portfolio-app-taisei.streamlit.app/)**
+## 📱 アプリケーション画面
 
-日本株式対応のポートフォリオ管理アプリ。リアルタイムの株価取得、AI診断機能、独自のテクニカル分析判断ツールを搭載。
+![メインダッシュボード](docs/images/main_dashboard.png)
+*(メインダッシュボード：ポートフォリオのパフォーマンスと取引履歴を可視化)*
+
+![AI市況分析](docs/images/market_outlook.png)
+*(AI市況分析：毎日のニュースからマーケットの動向を最新のAIモデルが自動生成)*
+
+## 💡 開発の目的（Why）
+
+**「既存の株管理アプリでは自身の投資スタイルに合わず、独自の分析指標や記録を手軽に残したかったため」**
+
+市販のポートフォリオ管理アプリの多くは、単なる「資産推移の確認ツール」にとどまり、日々のトレードのエントリー根拠や相場環境（市況ニュース、チャートのテクニカル分析）との紐付けが困難でした。
+そこで、**「トレード記録・振り返り」と「AIによる高度な相場分析（APIを活用したチャート診断やニュース要約）」を統合した独自のプラットフォーム**を開発しました。技術を通じて、一貫性のある投資判断と学習サイクルを回すことを目的としています。
+
+## 🛠️ 使用技術と工夫点（How）
+
+本アプリは、フロントエンドからバックエンドまでフルスタックな技術構成で要件を形にしています。
+
+### 1. フロントエンド技術とUI構築 (Streamlit / Python)
+- コアロジックをPythonで統一しつつ、**Streamlit**を用いて高速かつインタラクティブなUIを構築。
+- 単なる入力フォームにとどまらず、**Plotly**を用いた動的なチャート描画や、非同期でのAI回答のストリーミング表示を取り入れ、モダンなUX（ユーザー体験）を実現しています。
+
+### 2. データベース設計と可用性 (Supabase / RDB)
+- **Supabase（PostgreSQL）** を採用し、クラウド上で安全かつ堅牢にデータを管理しています。
+- **データの一貫性と同期の仕組み**:
+  - `transactions` テーブルを中心に、各取引の銘柄（ティッカー）、数量、価格、そして「エントリーのメモ（根拠）」をリレーショナルに管理。
+  - アプリ起動時にインターネット接続やSupabaseの死活監視を自律的に行い、**万が一クラウドDBのネットワークスロットルエラー等が発生した場合は、自動的にローカルのSQLiteへフォールバック**する堅牢なアーキテクチャ設計パターンを実装。これにより、障害発生時でもユーザーの記録が失われない「高い可用性」を実現しました。
+
+### 3. 高度な外部API連携 (Gemini 2.0 API & yfinance)
+- **最新マルチモーダルAIの活用**: 画像認識（ユーザーが指定したチャート画像のテクニカル解釈）や、自然言語処理（日々大量に配信される英語ベースの経済ニュースの翻訳・要約）を実装。
+- `yfinance` 等を用いたスクレイピング・データ取得基盤において、APIの無料枠制限（HTTP 429 Error）や、SSL証明書のパス依存といった環境固有のエラーを適切にハンドリングし、ユーザーに分かりやすいワーニングを出力するよう例外処理を徹底しています。
 
 ---
 
-## 🎯 開発背景
+## 📝 主な機能
 
-個人投資家として株式投資を行う中で、以下の課題を感じました：
-
-- 複数銘柄の保有状況を一元管理したい
-- トレードの根拠や反省を記録に残したい
-- チャート分析をAIにサポートしてほしい
-
-これらの課題を解決するため、**自分専用のポートフォリオ管理ツール**として開発しました。
-
----
-
-## ✨ 機能一覧
-
-### 📊 ダッシュボード
-- 保有銘柄の**リアルタイム評価額**を表示
-- ポートフォリオ構成のパイチャート
-- 銘柄別の損益状況をビジュアル化
-
-### 📝 取引記録管理 (CRUD)
+### 取引記録管理 (CRUD)
 - 買い/売り取引の登録・編集・削除
 - 逆指値（ストップロス）の記録
 - 取引根拠・反省のメモ機能
@@ -63,7 +71,7 @@
 
 ---
 
-## 🛠️ 技術スタック
+## 🛠️ 技術スタック一覧
 
 | カテゴリ | 技術 |
 |---------|------|
@@ -167,8 +175,6 @@ stock_portfolio_app/
 - [ ] CI/CD パイプライン構築
 - [ ] 銘柄スクリーニング機能
 - [ ] アラート通知機能
-
---
 
 ---
 
