@@ -4,6 +4,31 @@ yfinance を使用して現在の株価を取得
 銘柄検索機能付き（東証全銘柄対応）
 """
 
+import os
+import shutil
+import certifi
+import tempfile
+
+# -------------------------------------------------------------
+# [Fix for curl_cffi SSLError on Windows with non-ASCII paths]
+# Must be run before yfinance is imported anywhere.
+# Monkey-patch certifi.where() because Streamlit caches modules.
+# -------------------------------------------------------------
+try:
+    _safe_ca_path = os.path.join(tempfile.gettempdir(), 'cacert_yfinance.pem')
+    if not os.path.exists(_safe_ca_path):
+        shutil.copy2(certifi.where(), _safe_ca_path)
+    
+    # Global environment variable
+    os.environ['CURL_CA_BUNDLE'] = _safe_ca_path
+    os.environ['REQUESTS_CA_BUNDLE'] = _safe_ca_path
+    
+    # Monkey patch certifi
+    certifi.where = lambda: _safe_ca_path
+except Exception as e:
+    print(f"Warning: Failed to set safe CA bundle for yfinance: {e}")
+# -------------------------------------------------------------
+
 import yfinance as yf
 from typing import Optional
 import re
@@ -12,6 +37,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 import requests
 import io
+
 
 
 # 日本株リストのキャッシュファイル
@@ -469,6 +495,9 @@ def get_yfinance_news(ticker: str, max_items: int = 10) -> list:
         return parsed_news
         
     except Exception as e:
+        import streamlit as st
+        import traceback
+        st.error(f"yfinance news error for {ticker}:\n{traceback.format_exc()}")
         print(f"Error fetching yfinance news for {ticker}: {e}")
         return []
 

@@ -62,14 +62,25 @@ def get_database_url() -> str:
 DATABASE_URL = get_database_url()
 IS_POSTGRES = DATABASE_URL.startswith("postgresql")
 
-# エンジン作成（接続プーリング設定）
+# エンジン作成（接続プーリング設定 + フォールバック）
 if IS_POSTGRES:
-    engine = create_engine(
-        DATABASE_URL,
-        pool_pre_ping=True,
-        pool_recycle=300,
-        echo=False
-    )
+    try:
+        engine = create_engine(
+            DATABASE_URL,
+            pool_pre_ping=True,
+            pool_recycle=300,
+            echo=False
+        )
+        # 接続テスト
+        with engine.connect() as _conn:
+            _conn.execute(text("SELECT 1"))
+        print("[DB] PostgreSQL (Supabase) に接続しました")
+    except Exception as e:
+        print(f"[DB] PostgreSQL接続失敗: {e}")
+        print(f"[DB] SQLiteにフォールバックします: {SQLITE_PATH}")
+        DATABASE_URL = f"sqlite:///{SQLITE_PATH}"
+        IS_POSTGRES = False
+        engine = create_engine(DATABASE_URL, echo=False)
 else:
     engine = create_engine(DATABASE_URL, echo=False)
 

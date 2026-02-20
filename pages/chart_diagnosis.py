@@ -24,7 +24,7 @@ def show_chart_diagnosis():
     api_ok, api_msg = check_api_status()
     
     if not api_ok:
-        st.warning("⚠️ AI分析機能を利用するには `.env` ファイルに `GEMINI_API_KEY` を設定してください。")
+        st.warning(api_msg)
         return
     
     st.success("✅ Gemini API 接続済み")

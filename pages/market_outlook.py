@@ -7,6 +7,18 @@ import streamlit as st
 import json
 from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
+import os
+import shutil
+import certifi
+import tempfile
+
+try:
+    _safe_ca_path = os.path.join(tempfile.gettempdir(), 'cacert_yfinance.pem')
+    if not os.path.exists(_safe_ca_path):
+        shutil.copy2(certifi.where(), _safe_ca_path)
+    os.environ['CURL_CA_BUNDLE'] = _safe_ca_path
+except Exception as e:
+    pass
 
 from stock_api import get_yfinance_news
 from analysis_agent import analyze_market_outlook
@@ -24,15 +36,19 @@ def get_market_news() -> list:
     tickers = ["^N225", "^DJI", "JPY=X", "^GSPC"]
     all_news = []
     
-    # プログレスバー
-    progress_bar = st.progress(0, text="ニュース収集中...")
-    
-    for i, ticker in enumerate(tickers):
-        progress_bar.progress((i + 1) / len(tickers), text=f"{ticker} のニュースを取得中...")
-        news = get_yfinance_news(ticker, max_items=15) # 多めに取得
-        all_news.extend(news)
+    try:
+        # プログレスバー
+        progress_bar = st.progress(0, text="ニュース収集中...")
         
-    progress_bar.empty()
+        for i, ticker in enumerate(tickers):
+            progress_bar.progress((i + 1) / len(tickers), text=f"{ticker} のニュースを取得中...")
+            news = get_yfinance_news(ticker, max_items=15) # 多めに取得
+            all_news.extend(news)
+            
+        progress_bar.empty()
+    except Exception as e:
+        import traceback
+        st.error(f"ニュース取得中にエラーが発生しました: {e}\n\n{traceback.format_exc()}")
     
     # 重複削除（タイトルで判定）
     seen = set()

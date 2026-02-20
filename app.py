@@ -7,7 +7,24 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import os
+import shutil
+import certifi
+import tempfile
 from datetime import date, datetime
+
+# -------------------------------------------------------------
+# [Fix for curl_cffi SSLError on Windows with non-ASCII paths]
+# Must be run before yfinance is imported anywhere.
+# -------------------------------------------------------------
+try:
+    _safe_ca_path = os.path.join(tempfile.gettempdir(), 'cacert_yfinance.pem')
+    if not os.path.exists(_safe_ca_path):
+        shutil.copy2(certifi.where(), _safe_ca_path)
+    os.environ['CURL_CA_BUNDLE'] = _safe_ca_path
+except Exception as e:
+    pass
+
 from database import (
     init_db,
     add_transaction,
@@ -781,6 +798,8 @@ st.markdown("### 🔍 エントリー詳細・編集")
 st.caption("保有銘柄の取引根拠やチャート画像を確認・編集できます。")
 
 # ポートフォリオに含まれる銘柄リスト
+if 'portfolio_data' not in dir():
+    portfolio_data = []
 holdings_tickers = [p['ticker'] for p in portfolio_data]
 ticker_names = {p['ticker']: p['company_name'] for p in portfolio_data}
 
